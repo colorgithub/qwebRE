@@ -1,0 +1,36 @@
+.at-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-right: 8px;
+    max-width: 150px;
+    overflow-x: auto;
+}
+
+.at-tag {
+    background-color: #e5edff;
+    color: #3b82f6;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+    cursor: pointer;
+    border: 1px solid #bfdbfe;
+}
+
+.at-tag:hover {
+    background-color: #dbeafe;
+}
+
+.at-remove {
+    font-weight: bold;
+    cursor: pointer;
+    opacity: 0.6;
+}
+
+.at-remove:hover {
+    opacity: 1;
+}

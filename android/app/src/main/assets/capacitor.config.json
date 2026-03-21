@@ -1,0 +1,9 @@
+{
+	"appId": "com.example.qwebre",
+	"appName": "qwebRE",
+	"webDir": "dist",
+	"bundledWebRuntime": false,
+	"server": {
+		"cleartext": true
+	}
+}
