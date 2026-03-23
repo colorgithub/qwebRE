@@ -467,9 +467,6 @@ export default function MessageRenderer({ message, onAt, groupMembers = [] }) {
           case 'record':
             return <div key={index} className="msg-record">[璇煶]</div>;
             
-          case 'video':
-            return <div key={index} className="msg-video">[瑙嗛]</div>;
-            
           case 'share':
             return (
               <div key={index} className="msg-share" style={{border: '1px solid #ddd', borderRadius: '8px', padding: '8px', margin: '4px 0', cursor: 'pointer', background: '#fff'}} onClick={function() { if(segment.data.url) window.open(segment.data.url, '_blank'); }}>

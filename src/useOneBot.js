@@ -13,6 +13,7 @@ export function useOneBot(url, token) {
   const [customFaces, setCustomFaces] = useState([]); // [{ faceId, url, raw }]
   const [selfInfo, setSelfInfo] = useState(null);
   const wsRef = useRef(null);
+  const selfInfoRef = useRef(null);
   const getWsRef = () => wsRef; // Export wsRef for external use
 
   const getSessionId = (type, id) => `${type}:${id}`;
@@ -173,24 +174,78 @@ export function useOneBot(url, token) {
             ? payload.list
             : [];
 
+    const findLikelyUrl = (obj) => {
+      if (!obj || typeof obj !== 'object') return '';
+      const preferredKeys = [
+        'url', 'file', 'path', 'download_url', 'img_url', 'img', 'src', 'thumb', 'thumbnail'
+      ];
+      for (const key of preferredKeys) {
+        const value = obj[key];
+        if (typeof value === 'string' && value.trim()) return value.trim();
+      }
+      for (const value of Object.values(obj)) {
+        if (typeof value !== 'string') continue;
+        const v = value.trim();
+        if (!v) continue;
+        if (
+          v.startsWith('http://') ||
+          v.startsWith('https://') ||
+          v.startsWith('base64://') ||
+          v.startsWith('file://')
+        ) {
+          return v;
+        }
+      }
+      return '';
+    };
+
+    const findLikelyCode = (obj) => {
+      if (!obj || typeof obj !== 'object') return '';
+      const preferredKeys = [
+        'face_id', 'id', 'custom_face_id', 'emoji_id', 'file_id', 'code', 'face_code', 'qid'
+      ];
+      for (const key of preferredKeys) {
+        const value = obj[key];
+        if (value !== undefined && value !== null && String(value).trim()) {
+          return String(value).trim();
+        }
+      }
+      for (const value of Object.values(obj)) {
+        if (typeof value === 'number' && Number.isFinite(value)) {
+          return String(value);
+        }
+      }
+      return '';
+    };
+
     return root
-      .map((item) => {
+      .map((item, index) => {
         if (typeof item === 'number' || typeof item === 'string') {
-          const faceId = parseInt(item, 10);
-          if (!Number.isInteger(faceId) || faceId < 0) return null;
-          return { faceId, url: '', raw: item };
+          const raw = String(item);
+          const parsed = parseInt(raw, 10);
+          const faceId = Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+          return {
+            key: `${raw}_${index}`,
+            faceId,
+            faceCode: raw,
+            url: '',
+            raw: item
+          };
         }
         if (!item || typeof item !== 'object') return null;
-        const faceId =
-          parseInt(
-            item.face_id ?? item.id ?? item.custom_face_id ?? item.emoji_id ?? item.file_id,
-            10
-          );
-        const url = item.url ?? item.file ?? item.path ?? item.download_url ?? '';
-        if (!Number.isInteger(faceId) || faceId < 0) return null;
-        return { faceId, url: typeof url === 'string' ? url : '', raw: item };
+        const faceCode = findLikelyCode(item);
+        const parsed = parseInt(faceCode, 10);
+        const faceId = Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+        const url = findLikelyUrl(item);
+        return {
+          key: `${faceCode || 'face'}_${index}`,
+          faceId,
+          faceCode,
+          url: typeof url === 'string' ? url : '',
+          raw: item
+        };
       })
-      .filter(Boolean);
+      .filter((item) => item && (item.faceId !== null || item.faceCode || item.url));
   }, []);
 
   const fetchCustomFace = useCallback(() => {
@@ -271,6 +326,10 @@ export function useOneBot(url, token) {
   }, [fetchGroupInfo]);
 
   useEffect(() => {
+    selfInfoRef.current = selfInfo;
+  }, [selfInfo]);
+
+  useEffect(() => {
     if (!url) return;
 
     let wsUrl = url;
@@ -300,7 +359,7 @@ export function useOneBot(url, token) {
         try {
           const data = JSON.parse(event.data);
           if (data.post_type === 'message') {
-            const isSelf = String(data.user_id) === String(selfInfo ? selfInfo.user_id : '');
+            const isSelf = String(data.user_id) === String(selfInfoRef.current ? selfInfoRef.current.user_id : '');
             addMessage(Object.assign({}, data, { direction: isSelf ? 'outgoing' : 'incoming' }));
           } else if (data.echo === 'get_login_info') {
             if (data.status === 'ok' && data.data) {
@@ -317,6 +376,10 @@ export function useOneBot(url, token) {
           } else if (data.echo && data.echo.startsWith('fetch_custom_face_')) {
             if (data.status === 'ok') {
               const list = normalizeCustomFaces(data.data);
+              const invalid = list.filter((item) => item.faceId === null && !item.url);
+              if (invalid.length > 0) {
+                console.warn('Unsendable custom faces detected:', invalid.slice(0, 5));
+              }
               setCustomFaces(list);
               console.log('Custom faces fetched:', list.length);
             } else {
@@ -524,7 +587,7 @@ export function useOneBot(url, token) {
                   
                   const normalizedNew = newMsgs.map(m => {
                     // Make sure user_id is compared correctly, convert to string
-                    const isSelf = String(m.user_id) === String(selfInfo ? selfInfo.user_id : '');
+                    const isSelf = String(m.user_id) === String(selfInfoRef.current ? selfInfoRef.current.user_id : '');
                     return Object.assign({}, m, {
                       direction: isSelf ? 'outgoing' : 'incoming'
                     });
@@ -751,7 +814,7 @@ export function useOneBot(url, token) {
         clearTimeout(reconnectTimer);
       }
     };
-  }, [url, token, addMessage, fetchContacts]);
+  }, [url, token, addMessage, fetchContacts, normalizeCustomFaces]);
 
   const sendMessage = useCallback((targetId, message, messageType = 'private') => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {

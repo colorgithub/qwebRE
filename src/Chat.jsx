@@ -89,20 +89,27 @@ export default function Chat({ config }) {
   
   const currentSession = getCurrentSessionInfo();
   const displayedFaces = useMemo(() => {
-    return Array.isArray(customFaces) ? customFaces : [];
+    if (!Array.isArray(customFaces)) return [];
+    return customFaces.filter((face) => {
+      const hasNumericId = face && face.faceId !== null && face.faceId !== undefined;
+      const hasUrl = !!(face && typeof face.url === 'string' && face.url.trim());
+      return hasNumericId || hasUrl;
+    });
   }, [customFaces]);
 
   const handleSend = (e) => {
     e.preventDefault();
-    if ((!inputMessage.trim() && atList.length === 0) || !selectedSessionId) return;
-
     const trimmedInput = inputMessage.trim();
+    if (!trimmedInput && atList.length === 0) return;
+
     if (trimmedInput === '/fetch_custom_face') {
       fetchCustomFace();
       setShowFavoriteFacePanel(true);
       setInputMessage('');
       return;
     }
+
+    if (!selectedSessionId) return;
 
     // Use currentSession helper which handles sessions that aren't in state yet
     const session = currentSession;
@@ -315,11 +322,16 @@ export default function Chat({ config }) {
     if (ws.current.readyState !== WebSocket.OPEN) return;
     
     try {
+      const numericMessageId = Number(selectedMessage.message_id);
+      if (!Number.isFinite(numericMessageId)) {
+        alert('This message cannot be deleted from server (invalid message_id).');
+        return;
+      }
       // Send delete request to server
       ws.current.send(JSON.stringify({
         action: 'delete_msg',
         params: { 
-          message_id: parseInt(selectedMessage.message_id)
+          message_id: numericMessageId
         },
         echo: `delete_msg_${Date.now()}`
       }));
@@ -509,13 +521,20 @@ export default function Chat({ config }) {
     fetchCustomFace();
   };
 
-  const handleSendFavoriteFace = (faceId) => {
+  const handleSendFavoriteFace = (face) => {
     if (!selectedSessionId) return;
     const session = currentSession;
     if (!session) return;
 
-    const message = [{ type: 'face', data: { id: String(faceId) } }];
-    sendMessage(session.id, message, session.type);
+    if (face.faceId !== null && face.faceId !== undefined) {
+      sendMessage(session.id, [{ type: 'face', data: { id: String(face.faceId) } }], session.type);
+    } else if (face.url) {
+      sendMessage(session.id, [{ type: 'image', data: { file: face.url } }], session.type);
+    } else {
+      alert('该收藏表情无法发送：缺少 face id 和 url。');
+      return;
+    }
+
     setShowFavoriteFacePanel(false);
   };
 
@@ -1415,27 +1434,30 @@ export default function Chat({ config }) {
                       <div className="favorite-face-grid">
                         {displayedFaces.map((face) => {
                           const faceId = face.faceId;
-                          const faceUrl = face.url || `https://p.qpic.cn/face/${faceId}/0`;
+                          const faceUrl = face.url || (faceId !== null ? `https://p.qpic.cn/face/${faceId}/0` : '');
+                          const faceLabel = faceId !== null ? String(faceId) : (face.faceCode || 'custom');
                           return (
                             <button
-                              key={`${faceId}_${faceUrl}`}
+                              key={face.key || `${faceLabel}_${faceUrl}`}
                               type="button"
                               className="favorite-face-item"
-                              onClick={() => handleSendFavoriteFace(faceId)}
-                              title={`发送表情 ID ${faceId}`}
+                              onClick={() => handleSendFavoriteFace(face)}
+                              title={`发送表情 ${faceLabel}`}
                             >
                               <div className="favorite-face-thumb">
                                 <span className="favorite-face-fallback" aria-hidden="true">😀</span>
-                                <img
-                                  src={faceUrl}
-                                  alt={`face-${faceId}`}
-                                  className="favorite-face-img"
-                                  onError={(e) => {
-                                    e.currentTarget.style.display = 'none';
-                                  }}
-                                />
+                                {faceUrl ? (
+                                  <img
+                                    src={faceUrl}
+                                    alt={`face-${faceLabel}`}
+                                    className="favorite-face-img"
+                                    onError={(e) => {
+                                      e.currentTarget.style.display = 'none';
+                                    }}
+                                  />
+                                ) : null}
                               </div>
-                              <span className="favorite-face-id">{faceId}</span>
+                              <span className="favorite-face-id">{faceLabel}</span>
                             </button>
                           );
                         })}

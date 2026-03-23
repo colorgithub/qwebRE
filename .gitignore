@@ -28,3 +28,6 @@ gradle-*.zip
 
 # Accidental nested copy
 qwebRE/
+
+# Android signing keys
+*.keystore
