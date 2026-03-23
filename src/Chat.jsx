@@ -1,14 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useOneBot } from './useOneBot';
 import MessageRenderer from './MessageRenderer';
 import SettingsPanel from './Settings';
-import { MessageSquare, Users, User, Plus, Send, ArrowLeft, AtSign, Reply, X, Settings } from 'lucide-react';
+import { MessageSquare, Users, User, Plus, Send, ArrowLeft, AtSign, Reply, X, Settings, Smile } from 'lucide-react';
 import './Chat.css';
 import './ChatTabs.css';
 import './At.css';
 
 export default function Chat({ config }) {
-  const { status, messages, setMessages, sessions, sendMessage, sendImage, sendVideo, sendFile, fetchHistory, fetchGroupMemberList, getWsRef, friends, groups, groupMembers, selfInfo } = useOneBot(config.url, config.token);
+  const { status, messages, setMessages, sessions, sendMessage, sendImage, sendVideo, sendFile, fetchHistory, fetchGroupMemberList, fetchCustomFace, getWsRef, friends, groups, groupMembers, customFaces, selfInfo } = useOneBot(config.url, config.token);
   const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [inputMessage, setInputMessage] = useState('');
   const [atList, setAtList] = useState([]); // Array of {id, name}
@@ -29,6 +29,7 @@ export default function Chat({ config }) {
   const [selectedFile, setSelectedFile] = useState(null); // { file, name, size }
   const [showAtMenu, setShowAtMenu] = useState(false); // Show @ user selection menu
   const [showDrawer, setShowDrawer] = useState(false); // Show attachment drawer
+  const [showFavoriteFacePanel, setShowFavoriteFacePanel] = useState(false); // Show favorite face panel
   const [showMessageMenu, setShowMessageMenu] = useState(false); // Show message context menu
   const [selectedMessage, setSelectedMessage] = useState(null); // Selected message for context menu
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 }); // Menu position
@@ -44,6 +45,7 @@ export default function Chat({ config }) {
   const fileUploadInputRef = useRef(null);
   const atMenuRef = useRef(null);
   const messageMenuRef = useRef(null);
+  const favoriteFacePanelRef = useRef(null);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
@@ -86,10 +88,21 @@ export default function Chat({ config }) {
   };
   
   const currentSession = getCurrentSessionInfo();
+  const displayedFaces = useMemo(() => {
+    return Array.isArray(customFaces) ? customFaces : [];
+  }, [customFaces]);
 
   const handleSend = (e) => {
     e.preventDefault();
     if ((!inputMessage.trim() && atList.length === 0) || !selectedSessionId) return;
+
+    const trimmedInput = inputMessage.trim();
+    if (trimmedInput === '/fetch_custom_face') {
+      fetchCustomFace();
+      setShowFavoriteFacePanel(true);
+      setInputMessage('');
+      return;
+    }
 
     // Use currentSession helper which handles sessions that aren't in state yet
     const session = currentSession;
@@ -190,10 +203,10 @@ export default function Chat({ config }) {
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
     if (file) {
-      // 检查文件大小：100MB 限制（图片和视频除外）
+      // 妫€鏌ユ枃浠跺ぇ灏忥細100MB 闄愬埗锛堝浘鐗囧拰瑙嗛闄ゅ锛?
       const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB in bytes
       if (!file.type.startsWith('image/') && !file.type.startsWith('video/') && file.size > MAX_FILE_SIZE) {
-        alert(`文件大小超过 100MB 限制（当前：${(file.size / (1024 * 1024)).toFixed(2)} MB）`);
+        alert(`File too large. Limit is 100MB (current: ${(file.size / (1024 * 1024)).toFixed(2)} MB).`);
         if (fileUploadInputRef.current) {
           fileUploadInputRef.current.value = '';
         }
@@ -360,7 +373,7 @@ export default function Chat({ config }) {
                 ...m,
                 message: [{
                   type: 'text',
-                  data: { text: '原消息已被撤回' }
+                  data: { text: 'Message recalled' }
                 }],
                 recalled: true
               };
@@ -456,7 +469,7 @@ export default function Chat({ config }) {
                 ...m,
                 message: [{
                   type: 'text',
-                  data: { text: '原消息已被撤回' }
+                  data: { text: 'Message recalled' }
                 }],
                 recalled: true
               };
@@ -488,6 +501,22 @@ export default function Chat({ config }) {
 
   const handleAtClick = () => {
     setShowAtMenu(true);
+  };
+
+  const handleOpenFavoriteFacePanel = () => {
+    setShowFavoriteFacePanel(true);
+    setShowDrawer(false);
+    fetchCustomFace();
+  };
+
+  const handleSendFavoriteFace = (faceId) => {
+    if (!selectedSessionId) return;
+    const session = currentSession;
+    if (!session) return;
+
+    const message = [{ type: 'face', data: { id: String(faceId) } }];
+    sendMessage(session.id, message, session.type);
+    setShowFavoriteFacePanel(false);
   };
 
   const handleAtUserSelect = (userId, userName) => {
@@ -560,6 +589,23 @@ export default function Chat({ config }) {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showMessageMenu]);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        showFavoriteFacePanel &&
+        favoriteFacePanelRef.current &&
+        !favoriteFacePanelRef.current.contains(event.target)
+      ) {
+        setShowFavoriteFacePanel(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showFavoriteFacePanel]);
 
   // Get group members for @ menu
   const getGroupMembers = () => {
@@ -961,14 +1007,14 @@ export default function Chat({ config }) {
                         fontWeight: 'bold'
                       }}
                     >
-                      点击加载更老的消息
+                      点击加载更早的消息
                     </button>
                   </div>
                 )}
                 {loadingHistory && (
                   <div className="loading-history-indicator" style={{ textAlign: 'center', padding: '10px 0', color: '#888', fontSize: '13px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                     <div style={{ width: '14px', height: '14px', border: '2px solid #ccc', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite', marginRight: '6px' }}></div>
-                    加载更老的消息...
+                    正在加载更早消息...
                     <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
                   </div>
                 )}
@@ -1000,7 +1046,7 @@ export default function Chat({ config }) {
                       opacity: msg.recalled ? 0.6 : 1,
                       position: 'relative'
                     }}
-                    title={msg.recalled ? '已撤回的消息无法操作' : '右键点击查看更多操作'}
+                    title={msg.recalled ? '已撤回的消息无法操作' : '右键或长按查看更多操作'}
                   >
                     {msg.essence && (
                       <div style={{
@@ -1124,7 +1170,7 @@ export default function Chat({ config }) {
                 {selectedFile && (
                   <div className="file-preview-area" style={{ padding: '0.5rem', background: '#f3f4f6', borderBottom: '1px solid #e5e7eb' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{ fontSize: '32px' }}>📁</div>
+                      <div style={{ fontSize: '32px' }}>📄</div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 'bold', color: '#1f2937', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {selectedFile.name}
@@ -1276,6 +1322,27 @@ export default function Chat({ config }) {
                           </svg>
                           <span style={{ color: '#1f2937', fontSize: '14px' }}>文件</span>
                         </button>
+                        <button
+                          type="button"
+                          onClick={handleOpenFavoriteFacePanel}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '10px',
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            border: 'none',
+                            background: '#f3f4f6',
+                            cursor: 'pointer',
+                            transition: 'background 0.2s',
+                            textAlign: 'left'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = '#e5e7eb'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = '#f3f4f6'}
+                        >
+                          <Smile size={20} style={{ color: '#6b7280' }} />
+                          <span style={{ color: '#1f2937', fontSize: '14px' }}>收藏表情</span>
+                        </button>
                         {currentSession && currentSession.type === 'group' && (
                           <button 
                             type="button" 
@@ -1323,6 +1390,63 @@ export default function Chat({ config }) {
                     onChange={handleFileSelect}
                     style={{ display: 'none' }}
                   />
+                  {showFavoriteFacePanel && (
+                    <div ref={favoriteFacePanelRef} className="favorite-face-panel">
+                      <div className="favorite-face-panel-header">
+                        <span>收藏表情（/fetch_custom_face）</span>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button
+                            type="button"
+                            onClick={fetchCustomFace}
+                            className="favorite-face-refresh"
+                            title="刷新收藏表情"
+                          >
+                            刷新
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowFavoriteFacePanel(false)}
+                            className="favorite-face-close"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="favorite-face-grid">
+                        {displayedFaces.map((face) => {
+                          const faceId = face.faceId;
+                          const faceUrl = face.url || `https://p.qpic.cn/face/${faceId}/0`;
+                          return (
+                            <button
+                              key={`${faceId}_${faceUrl}`}
+                              type="button"
+                              className="favorite-face-item"
+                              onClick={() => handleSendFavoriteFace(faceId)}
+                              title={`发送表情 ID ${faceId}`}
+                            >
+                              <div className="favorite-face-thumb">
+                                <span className="favorite-face-fallback" aria-hidden="true">😀</span>
+                                <img
+                                  src={faceUrl}
+                                  alt={`face-${faceId}`}
+                                  className="favorite-face-img"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                  }}
+                                />
+                              </div>
+                              <span className="favorite-face-id">{faceId}</span>
+                            </button>
+                          );
+                        })}
+                        {displayedFaces.length === 0 && (
+                          <div className="favorite-face-empty">
+                            暂无收藏表情，输入 <code>/fetch_custom_face</code> 或点“刷新”获取。
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                   {/* @ User Selection Menu */}
                   {showAtMenu && currentSession && currentSession.type === 'group' && (
                     <div 
@@ -1343,7 +1467,7 @@ export default function Chat({ config }) {
                       }}
                     >
                       <div style={{ padding: '8px', borderBottom: '1px solid #e5e7eb', fontWeight: 'bold', color: '#374151' }}>
-                        选择要@的用户
+                        选择要 @ 的用户
                       </div>
                       {getGroupMembers().map(member => (
                         <div

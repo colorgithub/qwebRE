@@ -10,6 +10,7 @@ export function useOneBot(url, token) {
   const [friends, setFriends] = useState([]);
   const [groups, setGroups] = useState([]);
   const [groupMembers, setGroupMembers] = useState({}); // { groupId: [member1, member2] }
+  const [customFaces, setCustomFaces] = useState([]); // [{ faceId, url, raw }]
   const [selfInfo, setSelfInfo] = useState(null);
   const wsRef = useRef(null);
   const getWsRef = () => wsRef; // Export wsRef for external use
@@ -161,6 +162,49 @@ export function useOneBot(url, token) {
     }
   }, []);
 
+  const normalizeCustomFaces = useCallback((payload) => {
+    const root = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload?.faces)
+          ? payload.faces
+          : Array.isArray(payload?.list)
+            ? payload.list
+            : [];
+
+    return root
+      .map((item) => {
+        if (typeof item === 'number' || typeof item === 'string') {
+          const faceId = parseInt(item, 10);
+          if (!Number.isInteger(faceId) || faceId < 0) return null;
+          return { faceId, url: '', raw: item };
+        }
+        if (!item || typeof item !== 'object') return null;
+        const faceId =
+          parseInt(
+            item.face_id ?? item.id ?? item.custom_face_id ?? item.emoji_id ?? item.file_id,
+            10
+          );
+        const url = item.url ?? item.file ?? item.path ?? item.download_url ?? '';
+        if (!Number.isInteger(faceId) || faceId < 0) return null;
+        return { faceId, url: typeof url === 'string' ? url : '', raw: item };
+      })
+      .filter(Boolean);
+  }, []);
+
+  const fetchCustomFace = useCallback(() => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        action: 'fetch_custom_face',
+        params: {},
+        echo: `fetch_custom_face_${Date.now()}`
+      }));
+    } else {
+      console.warn('WebSocket not connected, cannot fetch custom face');
+    }
+  }, []);
+
   const addMessage = useCallback((msg) => {
     const isPrivate = msg.message_type === 'private';
     // For incoming messages:
@@ -269,6 +313,14 @@ export function useOneBot(url, token) {
           } else if (data.echo === 'get_group_list') {
             if (data.status === 'ok' && Array.isArray(data.data)) {
               setGroups(data.data);
+            }
+          } else if (data.echo && data.echo.startsWith('fetch_custom_face_')) {
+            if (data.status === 'ok') {
+              const list = normalizeCustomFaces(data.data);
+              setCustomFaces(list);
+              console.log('Custom faces fetched:', list.length);
+            } else {
+              console.error('Failed to fetch custom faces:', data);
             }
           } else if (data.echo && data.echo.startsWith('delete_msg_')) {
             // Handle message deletion response
@@ -969,5 +1021,5 @@ export function useOneBot(url, token) {
     });
   }, [addMessage]);
 
-  return { status, messages, setMessages, sessions, sendMessage, sendImage, sendVideo, sendFile, fetchHistory, fetchGroupMemberList, getWsRef, friends, groups, groupMembers, selfInfo };
+  return { status, messages, setMessages, sessions, sendMessage, sendImage, sendVideo, sendFile, fetchHistory, fetchGroupMemberList, fetchCustomFace, getWsRef, friends, groups, groupMembers, customFaces, selfInfo };
 }
