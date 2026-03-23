@@ -51,7 +51,7 @@ function parseCQCode(text) {
   return segments;
 }
 
-export default function MessageRenderer({ message, onAt }) {
+export default function MessageRenderer({ message, onAt, groupMembers = [] }) {
   let segments = [];
 
   if (typeof message === 'string') {
@@ -73,47 +73,225 @@ export default function MessageRenderer({ message, onAt }) {
           case 'image':
              // NapCat/OneBot returns url or file (sometimes file is a local path or base64)
              let imgSrc = segment.data.url || segment.data.file;
-             if (!imgSrc) return <span key={index}>[图片]</span>;
+             if (!imgSrc) {
+               console.warn('Image source not available:', segment.data);
+               return <span key={index}>[图片]</span>;
+             }
+             
+             // Check if this is a sticker/face (should be displayed as image)
+             const isSticker = segment.data.sub_type === 'sticker' || segment.type === 'face';
              
              // Extract base64 part if it's inside base64://...
              if (imgSrc.indexOf('base64://') !== -1) {
-               imgSrc = 'data:image/png;base64,' + imgSrc.split('base64://')[1];
+               const base64Data = imgSrc.split('base64://')[1];
+               // Try to detect image type from file extension or default to png
+               const imageType = base64Data.toLowerCase().endsWith('.gif') ? 'gif' : 
+                                base64Data.toLowerCase().endsWith('.jpg') || base64Data.toLowerCase().endsWith('.jpeg') ? 'jpeg' :
+                                base64Data.toLowerCase().endsWith('.webp') ? 'webp' : 'png';
+               imgSrc = `data:image/${imageType};base64,${base64Data}`;
+               console.log('Loaded base64 image:', imageType);
              } else if (imgSrc.startsWith('file://')) {
-               // Sometimes the file protocol is used but points to a local cache we cannot read in browser
-               // We might just show it if WebView supports it, or it will trigger onError
-             } else if (!imgSrc.startsWith('http') && !imgSrc.startsWith('data:') && !imgSrc.startsWith('file:')) {
-               // If it's a raw base64 string
-               if (/^[A-Za-z0-9+/=]+$/.test(imgSrc) && imgSrc.length > 100) {
-                 imgSrc = 'data:image/png;base64,' + imgSrc;
+               // NapCat usually provides HTTP URL alongside file:// path
+               // If only file:// is available, try to construct URL from common NapCat file server
+               const filePath = imgSrc.replace('file://', '');
+               // Try using the URL if available, otherwise show placeholder
+               if (!segment.data.url) {
+                 // File path cannot be accessed in browser, show placeholder
+                 console.warn('File path only, no HTTP URL available:', filePath);
+                 return <span key={index}>[图片]</span>;
                }
-             }
+             } else if (!imgSrc.startsWith('http') && !imgSrc.startsWith('data:')) {
+              // If it's a raw base64 string (without data:image prefix)
+              if (/^[A-Za-z0-9+/=]+$/.test(imgSrc) && imgSrc.length > 100) {
+                const imageType = imgSrc.toLowerCase().startsWith('r0l') ? 'gif' : 
+                                 imgSrc.toLowerCase().startsWith('/9j') ? 'jpeg' : 'png';
+                imgSrc = `data:image/${imageType};base64,${imgSrc}`;
+                console.log('Loaded raw base64 image:', imageType);
+              } else if (imgSrc.startsWith('/')) {
+                // Relative path, cannot be resolved without base URL
+                console.warn('Relative path cannot be resolved:', imgSrc);
+                return <span key={index}>[图片]</span>;
+              }
+            }
+
+            // Use proxy for HTTP images to bypass CORS
+            const PROXY_URL = 'http://localhost:3002/?url=';
+            const finalImgSrc = imgSrc.startsWith('http') ? PROXY_URL + encodeURIComponent(imgSrc) : imgSrc;
 
             return (
               <div key={index} className="msg-image-container">
                 <img 
-                  src={imgSrc} 
-                  alt="[图片]" 
+                  src={finalImgSrc} 
+                  alt={isSticker ? "[表情]" : "[图片]"} 
                   className="msg-image" 
-                  style={{maxWidth: '100%', maxHeight: '300px', borderRadius: '8px', marginTop: '4px', cursor: 'pointer'}}
+                  style={{
+                    maxWidth: isSticker ? '150px' : '100%', 
+                    maxHeight: isSticker ? '150px' : '300px', 
+                    borderRadius: '8px', 
+                    marginTop: '4px', 
+                    cursor: 'pointer',
+                    objectFit: isSticker ? 'contain' : 'cover'
+                  }}
                   onClick={function() { window.open(imgSrc, '_blank'); }}
-                  onError={function(e) { e.target.style.display = 'none'; e.target.insertAdjacentHTML('afterend', '<span style="color:red;font-size:0.8em;">[图片加载失败]</span>'); }}
+                  onError={async function(e) { 
+                    console.error('Image load failed:', finalImgSrc, e);
+                    // Try to reload once after 500ms delay
+                    if (!e.target.dataset.retryAttempt) {
+                      e.target.dataset.retryAttempt = '1';
+                      setTimeout(() => { e.target.src = finalImgSrc; }, 500);
+                      return;
+                    }
+                    // Second failure - show error message with clickable link
+                    e.target.style.display = 'none'; 
+                    e.target.insertAdjacentHTML('afterend', `
+                      <div style="margin-top: 4px; padding: 8px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; font-size: 0.8em;">
+                        <span style="color: #856404;">[${isSticker ? '表情' : '图片'}加载失败]</span>
+                        <br/>
+                        <a href="${imgSrc}" target="_blank" rel="noopener noreferrer" style="color: #007bff; text-decoration: underline; word-break: break-all;">
+                          点击打开${isSticker ? '表情' : '图片'}链接
+                        </a>
+                      </div>
+                    `); 
+                  }}
+                  onLoad={function() { console.log('Image loaded successfully:', finalImgSrc); }}
                 />
               </div>
             );
             
+          case 'video':
+            // Video support - similar to image but with video player
+            let videoSrc = segment.data.url || segment.data.file;
+            const videoTitle = segment.data.title || '视频';
+            
+            if (!videoSrc) {
+              return <span key={index}>[视频]</span>;
+            }
+            
+            // Handle base64 video data
+            let isBase64 = false;
+            if (videoSrc.indexOf('base64://') !== -1) {
+              const base64Data = videoSrc.split('base64://')[1];
+              // Detect video type from base64 data
+              const videoType = base64Data.toLowerCase().startsWith('aaaaIGZ0eXBtcDQy') ? 'video/mp4' : 
+                               base64Data.toLowerCase().startsWith('gicg') ? 'video/ogg' : 'video/webm';
+              videoSrc = `data:${videoType};base64,${base64Data}`;
+              isBase64 = true;
+              console.log('Loaded base64 video:', videoType, 'length:', base64Data.length);
+            } else if (videoSrc.startsWith('http')) {
+              // Use proxy for HTTP videos to bypass CORS
+              const VIDEO_PROXY_URL = 'http://localhost:3002/?url=';
+              videoSrc = VIDEO_PROXY_URL + encodeURIComponent(videoSrc);
+              console.log('Using video proxy:', videoSrc);
+            }
+            
+            return (
+              <div key={index} className="msg-video-container" style={{ margin: '8px 0' }}>
+                <video 
+                  src={videoSrc}
+                  controls
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: '400px',
+                    borderRadius: '8px',
+                    backgroundColor: '#000'
+                  }}
+                  onError={async function(e) {
+                    console.error('Video load failed:', videoSrc, e);
+                    // For base64 videos, try to create Blob URL as fallback
+                    if (isBase64 && videoSrc.startsWith('data:')) {
+                      try {
+                        const base64Data = videoSrc.split(',')[1];
+                        const byteCharacters = atob(base64Data);
+                        const byteNumbers = new Array(byteCharacters.length);
+                        for (let i = 0; i < byteCharacters.length; i++) {
+                          byteNumbers[i] = byteCharacters.charCodeAt(i);
+                        }
+                        const byteArray = new Uint8Array(byteNumbers);
+                        const blob = new Blob([byteArray], { type: 'video/mp4' });
+                        const blobUrl = URL.createObjectURL(blob);
+                        e.target.src = blobUrl;
+                        return;
+                      } catch (err) {
+                        console.error('Failed to create blob URL:', err);
+                      }
+                    }
+                    // Second failure - show error message
+                    e.target.style.display = 'none';
+                    e.target.insertAdjacentHTML('afterend', `
+                      <div style="margin-top: 4px; padding: 8px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; font-size: 0.8em;">
+                        <span style="color: #856404;">[视频加载失败]</span>
+                        <br/>
+                        <a href="${videoSrc}" target="_blank" rel="noopener noreferrer" style="color: #007bff; text-decoration: underline; word-break: break-all;">
+                          点击打开视频链接
+                        </a>
+                      </div>
+                    `);
+                  }}
+                >
+                  您的浏览器不支持视频播放
+                </video>
+                <div style={{ marginTop: '4px', fontSize: '0.85em', color: '#666' }}>
+                  {videoTitle}
+                </div>
+              </div>
+            );
+            
           case 'face':
-            return <span key={index} className="msg-face" title={`Face ID: ${segment.data.id}`}>[表情: {segment.data.id}]</span>;
+            // QQ 表情支持 - 使用官方 CDN 加载表情图片
+            // QQ 表情 ID 范围：1-258（经典表情），还有更多扩展表情
+            const faceId = parseInt(segment.data.id);
+            const faceUrl = `https://p.qpic.cn/face/${faceId}/0`;
+            
+            return (
+              <img 
+                key={index}
+                src={faceUrl}
+                alt={`表情：${faceId}`}
+                title={`QQ 表情 #${faceId}`}
+                style={{
+                  width: '24px',
+                  height: '24px',
+                  verticalAlign: 'middle',
+                  margin: '0 2px',
+                  display: 'inline-block'
+                }}
+                onError={function(e) {
+                  // 如果加载失败，降级显示文本
+                  e.target.style.display = 'none';
+                  e.target.insertAdjacentHTML('afterend', `<span title="QQ 表情 #${faceId}">[表情:${faceId}]</span>`);
+                }}
+                loading="lazy"
+              />
+            );
             
           case 'at':
+            // 从群成员列表中查找昵称
+            const qqId = String(segment.data.qq);
+            let displayName = qqId;
+            
+            // 特殊处理全体成员
+            if (qqId === 'all') {
+              displayName = '全体成员';
+            } else {
+              // 从群成员列表中查找
+              const member = groupMembers.find(m => String(m.user_id) === qqId);
+              if (member) {
+                displayName = member.nickname || member.card || qqId;
+              } else if (segment.data.name) {
+                // 如果 CQ 码中有 name 属性，优先使用
+                displayName = segment.data.name;
+              }
+            }
+            
             return (
               <span 
                 key={index} 
                 className="msg-at" 
                 style={{color: '#2563eb', fontWeight: 'bold', marginRight: '4px', cursor: onAt ? 'pointer' : 'default'}}
-                onClick={function() { if(onAt) onAt(segment.data.qq); }}
+                onClick={function() { if(onAt) onAt(qqId, displayName); }}
                 title={onAt ? "Click to @ this user" : ""}
               >
-                @{segment.data.name || segment.data.qq}
+                @{displayName}
               </span>
             );
             
@@ -139,6 +317,139 @@ export default function MessageRenderer({ message, onAt }) {
                 <div style={{opacity: 0.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>
                   Message ID: {segment.data.id}
                 </div>
+              </div>
+            );
+
+          case 'file':
+            // 文件消息渲染
+            const fileName = segment.data?.name || '未知文件';
+            const fileSize = segment.data?.size || 0;
+            const fileBase64 = segment.data?.file || '';
+            
+            console.log('File message rendering:', {
+              fileName,
+              fileSize,
+              hasBase64: fileBase64 ? true : false,
+              base64Prefix: fileBase64 ? fileBase64.substring(0, 20) : 'N/A',
+              base64Length: fileBase64 ? fileBase64.length : 0
+            });
+            
+            // 格式化文件大小
+            const formatFileSize = (bytes) => {
+              if (bytes === 0) return '0 B';
+              const k = 1024;
+              const sizes = ['B', 'KB', 'MB', 'GB'];
+              const i = Math.floor(Math.log(bytes) / Math.log(k));
+              return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+            };
+            
+            // 获取文件图标
+            const getFileIcon = (filename) => {
+              const ext = filename.split('.').pop().toLowerCase();
+              if (['pdf'].includes(ext)) return '📄';
+              if (['doc', 'docx'].includes(ext)) return '📝';
+              if (['xls', 'xlsx'].includes(ext)) return '📊';
+              if (['ppt', 'pptx'].includes(ext)) return '📊';
+              if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return '📦';
+              if (['txt', 'md', 'json', 'js', 'css', 'html'].includes(ext)) return '📃';
+              if (['mp3', 'wav', 'flac', 'aac'].includes(ext)) return '🎵';
+              if (['mp4', 'avi', 'mkv', 'mov', 'wmv'].includes(ext)) return '🎬';
+              if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(ext)) return '🖼️';
+              if (['exe', 'msi', 'dmg'].includes(ext)) return '⚙️';
+              return '📁';
+            };
+            
+            // 创建下载链接 - 内置文件加载器
+            const handleDownload = () => {
+              console.log('Download clicked:', { fileName, fileSize, hasBase64: !!fileBase64 });
+              
+              if (fileBase64 && fileBase64.startsWith('base64://')) {
+                const base64Data = fileBase64.split('base64://')[1];
+                console.log('Base64 data length:', base64Data.length);
+                
+                try {
+                  // Step 1: Decode base64
+                  console.log('Decoding base64...');
+                  const byteCharacters = atob(base64Data);
+                  console.log('Decoded bytes:', byteCharacters.length);
+                  
+                  // Step 2: Convert to byte array
+                  const byteNumbers = new Array(byteCharacters.length);
+                  for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                  }
+                  const byteArray = new Uint8Array(byteNumbers);
+                  console.log('Byte array created:', byteArray.length, 'bytes');
+                  
+                  // Step 3: Create Blob
+                  const blob = new Blob([byteArray]);
+                  console.log('Blob created:', blob.size, 'bytes, type:', blob.type || 'unknown');
+                  
+                  // Step 4: Create download link
+                  const blobUrl = URL.createObjectURL(blob);
+                  console.log('Blob URL created:', blobUrl);
+                  
+                  const a = document.createElement('a');
+                  a.href = blobUrl;
+                  a.download = fileName;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  
+                  // Step 5: Cleanup
+                  setTimeout(() => {
+                    URL.revokeObjectURL(blobUrl);
+                    console.log('Blob URL revoked');
+                  }, 1000);
+                  
+                  console.log('Download completed successfully');
+                } catch (err) {
+                  console.error('Download failed:', err);
+                  console.error('Error stack:', err.stack);
+                  alert('文件下载失败：' + err.message + '\n\n请查看控制台获取详细信息');
+                }
+              } else if (fileBase64 && fileBase64.startsWith('file://')) {
+                // NapCat 返回的文件路径
+                console.warn('File path detected, cannot download directly:', fileBase64);
+                alert('该文件存储在服务器上，无法直接下载。\n\n文件路径：' + fileBase64);
+              } else {
+                console.error('File data not available:', { fileBase64, type: typeof fileBase64 });
+                alert('文件数据不可用，无法下载\n\n这可能是因为：\n1. 文件未正确上传到服务器\n2. 浏览器刷新后数据丢失\n3. 服务器不支持该文件类型');
+              }
+            };
+            
+            return (
+              <div 
+                key={index} 
+                className="msg-file"
+                style={{
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  padding: '12px',
+                  margin: '4px 0',
+                  backgroundColor: '#f9fafb',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  cursor: 'pointer',
+                  transition: 'background-color 0.2s'
+                }}
+                onClick={handleDownload}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f9fafb'}
+                title="点击下载文件"
+              >
+                <div style={{fontSize: '32px'}}>{getFileIcon(fileName)}</div>
+                <div style={{flex: 1, minWidth: 0}}>
+                  <div style={{fontWeight: 'bold', color: '#1f2937', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>
+                    {fileName}
+                  </div>
+                  <div style={{fontSize: '0.8em', color: '#6b7280', marginTop: '2px'}}>
+                    {formatFileSize(fileSize)}
+                    {fileSize === 0 && ' (0 B - 文件可能已损坏或未保存)'}
+                  </div>
+                </div>
+                <div style={{color: '#3b82f6', fontSize: '20px'}}>⬇️</div>
               </div>
             );
 

@@ -418,3 +418,561 @@
 .modal-actions button.primary:hover {
   background-color: #2563eb;
 }
+
+/* Animations */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+/* Apply animations to elements */
+.session-item {
+  animation: slideInLeft 0.2s ease-out;
+}
+
+.session-item:nth-child(1) { animation-delay: 0.02s; }
+.session-item:nth-child(2) { animation-delay: 0.04s; }
+.session-item:nth-child(3) { animation-delay: 0.06s; }
+.session-item:nth-child(4) { animation-delay: 0.08s; }
+.session-item:nth-child(5) { animation-delay: 0.1s; }
+.session-item:nth-child(6) { animation-delay: 0.12s; }
+.session-item:nth-child(7) { animation-delay: 0.14s; }
+.session-item:nth-child(8) { animation-delay: 0.16s; }
+.session-item:nth-child(9) { animation-delay: 0.18s; }
+.session-item:nth-child(10) { animation-delay: 0.2s; }
+
+.contact-item {
+  animation: slideInLeft 0.2s ease-out;
+}
+
+.contact-item:nth-child(1) { animation-delay: 0.02s; }
+.contact-item:nth-child(2) { animation-delay: 0.04s; }
+.contact-item:nth-child(3) { animation-delay: 0.06s; }
+.contact-item:nth-child(4) { animation-delay: 0.08s; }
+.contact-item:nth-child(5) { animation-delay: 0.1s; }
+
+.message {
+  animation: scaleIn 0.15s ease-out;
+}
+
+.message.sent {
+  animation: slideInRight 0.2s ease-out;
+}
+
+.message.received {
+  animation: slideInLeft 0.2s ease-out;
+}
+
+.attachment-drawer {
+  animation: slideUp 0.2s ease-out;
+}
+
+.drawer-content button {
+  animation: fadeIn 0.2s ease-out;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.drawer-content button:hover {
+  transform: translateY(-2px) scale(1.02);
+}
+
+.at-tag {
+  animation: scaleIn 0.15s ease-out;
+  transition: all 0.2s ease;
+}
+
+.at-tag:hover {
+  transform: scale(1.05);
+}
+
+.reply-bar {
+  animation: slideDown 0.2s ease-out;
+}
+
+.modal {
+  animation: scaleIn 0.2s ease-out;
+}
+
+.modal-overlay {
+  animation: fadeIn 0.15s ease-out;
+}
+
+.send-btn {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.send-btn:hover:not(:disabled) {
+  transform: scale(1.1) rotate(15deg);
+}
+
+.send-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.attachment-btn {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.attachment-btn:hover {
+  transform: scale(1.1);
+}
+
+.attachment-btn:active {
+  transform: scale(0.95);
+}
+
+.new-chat-btn {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.new-chat-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.new-chat-btn:active {
+  transform: translateY(0);
+}
+
+.tab-btn {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.tab-btn:hover {
+  transform: translateY(-2px);
+}
+
+.tab-btn.active {
+  animation: pulse 0.3s ease-out;
+}
+
+.status-badge {
+  transition: all 0.3s ease;
+}
+
+.status-badge.connected {
+  animation: pulse 2s infinite;
+}
+
+.message-menu {
+  animation: scaleIn 0.15s ease-out;
+}
+
+.message-menu button {
+  transition: all 0.15s ease;
+}
+
+.message-menu button:hover {
+  transform: translateX(4px);
+}
+
+.essence-message {
+  animation: pulse 0.5s ease-out;
+}
+
+.recalled-message {
+  animation: fadeOut 0.3s ease-out;
+}
+
+/* Loading animation */
+.loading-history {
+  animation: shimmer 1.5s infinite linear;
+  background: linear-gradient(90deg, #f0f0f0 0px, #e0e0e0 40px, #f0f0f0 80px);
+  background-size: 1000px 100%;
+}
+
+/* Image and video hover effects */
+.msg-image {
+  transition: all 0.2s ease;
+}
+
+.msg-image:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.msg-video-container video {
+  transition: all 0.2s ease;
+}
+
+.msg-video-container:hover video {
+  transform: scale(1.02);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.msg-file {
+  transition: all 0.2s ease;
+}
+
+.msg-file:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Input area animations */
+.message-input {
+  transition: all 0.2s ease;
+}
+
+.message-input:focus {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+}
+
+/* Scrollbar styling with animation */
+.sessions-list::-webkit-scrollbar,
+.messages-list::-webkit-scrollbar,
+.contacts-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sessions-list::-webkit-scrollbar-track,
+.messages-list::-webkit-scrollbar-track,
+.contacts-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sessions-list::-webkit-scrollbar-thumb,
+.messages-list::-webkit-scrollbar-thumb,
+.contacts-list::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+  transition: background 0.2s ease;
+}
+
+.sessions-list::-webkit-scrollbar-thumb:hover,
+.messages-list::-webkit-scrollbar-thumb:hover,
+.contacts-list::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Dark Mode Styles */
+.dark-mode .chat-container {
+  background-color: #111827;
+}
+
+.dark-mode .sidebar {
+  background-color: #1f2937;
+  border-right-color: #374151;
+}
+
+.dark-mode .sidebar-header {
+  border-bottom-color: #374151;
+}
+
+.dark-mode .sidebar h2 {
+  color: #f3f4f6;
+}
+
+.dark-mode .status-badge {
+  color: #1f2937;
+}
+
+.dark-mode .session-item {
+  border-bottom-color: #374151;
+}
+
+.dark-mode .session-item:hover {
+  background-color: #374151;
+}
+
+.dark-mode .session-item.active {
+  background-color: #374151;
+  border-left-color: #60a5fa;
+}
+
+.dark-mode .session-name,
+.dark-mode .contact-name {
+  color: #f3f4f6;
+}
+
+.dark-mode .session-preview,
+.dark-mode .contact-id {
+  color: #9ca3af;
+}
+
+.dark-mode .session-meta {
+  color: #9ca3af;
+}
+
+.dark-mode .new-chat-btn {
+  background-color: #374151;
+  color: #f3f4f6;
+}
+
+.dark-mode .new-chat-btn:hover {
+  background-color: #4b5563;
+}
+
+.dark-mode .main-chat {
+  background-color: #111827;
+}
+
+.dark-mode .chat-header {
+  border-bottom-color: #374151;
+  background-color: #1f2937;
+}
+
+.dark-mode .chat-header h3 {
+  color: #f3f4f6;
+}
+
+.dark-mode .chat-type {
+  background-color: #374151;
+  color: #9ca3af;
+}
+
+.dark-mode .messages-list {
+  background-color: #111827;
+}
+
+.dark-mode .message.received {
+  background-color: #1f2937;
+  color: #f3f4f6;
+  border-color: #374151;
+}
+
+.dark-mode .message.received .message-content {
+  color: #f3f4f6;
+}
+
+.dark-mode .message.sent {
+  background-color: #374151;
+  color: #f3f4f6;
+}
+
+.dark-mode .message.sent .message-content {
+  color: #f3f4f6;
+}
+
+.dark-mode .message-time {
+  color: #9ca3af;
+}
+
+.dark-mode .message-content-renderer .msg-text {
+  color: #f3f4f6;
+}
+
+.dark-mode .input-area {
+  background-color: #1f2937;
+  border-top-color: #374151;
+}
+
+.dark-mode .message-input {
+  background-color: #374151;
+  border-color: #4b5563;
+  color: #f3f4f6;
+}
+
+.dark-mode .message-input::placeholder {
+  color: #9ca3af;
+}
+
+.dark-mode .attachment-btn,
+.dark-mode .send-btn {
+  color: #9ca3af;
+}
+
+.dark-mode .attachment-btn:hover,
+.dark-mode .send-btn:hover {
+  background-color: #374151;
+  color: #f3f4f6;
+}
+
+.dark-mode .empty-state {
+  color: #9ca3af;
+}
+
+.dark-mode .modal {
+  background-color: #1f2937;
+}
+
+.dark-mode .modal h3 {
+  color: #f3f4f6;
+}
+
+.dark-mode .modal label {
+  color: #9ca3af;
+}
+
+.dark-mode .modal select,
+.dark-mode .modal input {
+  background-color: #374151;
+  border-color: #4b5563;
+  color: #f3f4f6;
+}
+
+.dark-mode .modal-actions button {
+  background-color: #374151;
+  color: #f3f4f6;
+  border-color: #4b5563;
+}
+
+.dark-mode .modal-actions button.primary {
+  background-color: #3b82f6;
+  color: white;
+}
+
+.dark-mode .at-tag {
+  background-color: #374151;
+  color: #f3f4f6;
+}
+
+.dark-mode .reply-bar {
+  background-color: #1f2937;
+  border-top-color: #374151;
+}
+
+.dark-mode .reply-bar span {
+  color: #f3f4f6;
+}
+
+.dark-mode .reply-bar button {
+  color: #9ca3af;
+}
+
+.dark-mode .drawer-content button {
+  background-color: #374151;
+  color: #f3f4f6;
+}
+
+.dark-mode .drawer-content button:hover {
+  background-color: #4b5563;
+}
+
+.dark-mode .message-menu {
+  background-color: #1f2937;
+  border-color: #374151;
+}
+
+.dark-mode .message-menu button {
+  color: #f3f4f6;
+}
+
+.dark-mode .message-menu button:hover {
+  background-color: #374151;
+}
+
+.dark-mode .essence-message {
+  border-color: #f59e0b;
+}
+
+.dark-mode .recalled-message .message-content {
+  color: #9ca3af;
+}
+
+.dark-mode .msg-image-container .msg-image {
+  background-color: #1f2937;
+}
+
+.dark-mode .msg-video-container video {
+  background-color: #1f2937;
+}
+
+.dark-mode .msg-file {
+  background-color: #1f2937;
+  border-color: #374151;
+}
+
+.dark-mode .msg-file .file-name {
+  color: #f3f4f6;
+}
+
+.dark-mode .msg-file .file-size {
+  color: #9ca3af;
+}

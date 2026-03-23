@@ -23,4 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 
-gradle-7.0-all.zip
+# Local/offline artifacts
+gradle-*.zip
+
+# Accidental nested copy
+qwebRE/

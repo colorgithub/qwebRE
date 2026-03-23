@@ -1,3 +1,14 @@
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .at-list {
     display: flex;
     flex-wrap: wrap;
@@ -19,18 +30,23 @@
     white-space: nowrap;
     cursor: pointer;
     border: 1px solid #bfdbfe;
+    animation: scaleIn 0.15s ease-out;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .at-tag:hover {
     background-color: #dbeafe;
+    transform: scale(1.05);
 }
 
 .at-remove {
     font-weight: bold;
     cursor: pointer;
     opacity: 0.6;
+    transition: all 0.2s ease;
 }
 
 .at-remove:hover {
     opacity: 1;
+    transform: scale(1.2) rotate(90deg);
 }

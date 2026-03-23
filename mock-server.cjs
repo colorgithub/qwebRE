@@ -41,25 +41,64 @@ wss.on('connection', (ws) => {
       let rawMessage;
 
       if (useArray) {
+        // Generate 1-3 random QQ faces
+        const faceCount = Math.floor(Math.random() * 3) + 1;
+        const faces = [];
+        for (let i = 0; i < faceCount; i++) {
+          faces.push({ type: 'face', data: { id: Math.floor(Math.random() * 258) + 1 } });
+        }
+        
         messageContent = [
           { type: 'text', data: { text: `Hello from ${isGroup ? 'Group ' + groupId : 'User ' + userId}! ` } },
-          { type: 'face', data: { id: Math.floor(Math.random() * 200) } },
+          ...faces,
           { type: 'text', data: { text: ` Random: ${Math.floor(Math.random() * 100)}` } }
         ];
         // Simulate image occasionally
-        if (Math.random() > 0.8) {
-            messageContent.push({ 
-                type: 'image', 
-                data: { 
-                    file: 'https://picsum.photos/200/300',
-                    url: 'https://picsum.photos/200/300' 
-                } 
-            });
+        if (Math.random() > 0.7) {
+            const isSticker = Math.random() > 0.5; // 50% chance of being a sticker
+            if (isSticker) {
+                // Simulate sticker/face image (like QQ favorites)
+                messageContent.push({ 
+                    type: 'image', 
+                    data: { 
+                        file: `https://p.qlogo.cn/gh/${Math.floor(Math.random() * 1000)}/${Math.floor(Math.random() * 1000)}/100`,
+                        url: `https://p.qlogo.cn/gh/${Math.floor(Math.random() * 1000)}/${Math.floor(Math.random() * 1000)}/100`,
+                        sub_type: 'sticker'
+                    } 
+                });
+            } else {
+                // Simulate regular image (may fail to load)
+                const imageType = Math.random() > 0.5 ? 'normal' : 'sticker';
+                if (imageType === 'sticker') {
+                    messageContent.push({ 
+                        type: 'image', 
+                        data: { 
+                            file: `https://qqface.com/sticker/${Math.floor(Math.random() * 100)}.gif`,
+                            url: `https://qqface.com/sticker/${Math.floor(Math.random() * 100)}.gif`,
+                            sub_type: 'sticker'
+                        } 
+                    });
+                } else {
+                    messageContent.push({ 
+                        type: 'image', 
+                        data: { 
+                            file: 'https://picsum.photos/200/300',
+                            url: 'https://picsum.photos/200/300' 
+                        } 
+                    });
+                }
+            }
         }
         rawMessage = messageContent.map(s => s.type === 'text' ? s.data.text : `[CQ:${s.type},...]`).join('');
       } else {
-        // String format with CQ code
-        messageContent = `Hello from ${isGroup ? 'Group ' + groupId : 'User ' + userId}! [CQ:face,id=${Math.floor(Math.random() * 200)}] Random: ${Math.floor(Math.random() * 100)}`;
+        // String format with CQ code - support multiple faces
+        const faceCount = Math.floor(Math.random() * 3) + 1;
+        let faceCodes = '';
+        for (let i = 0; i < faceCount; i++) {
+          const faceId = Math.floor(Math.random() * 258) + 1;
+          faceCodes += `[CQ:face,id=${faceId}]`;
+        }
+        messageContent = `Hello from ${isGroup ? 'Group ' + groupId : 'User ' + userId}! ${faceCodes} Random: ${Math.floor(Math.random() * 100)}`;
         rawMessage = messageContent;
       }
       
