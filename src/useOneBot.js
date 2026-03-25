@@ -14,6 +14,7 @@ export function useOneBot(url, token) {
   const [selfInfo, setSelfInfo] = useState(null);
   const wsRef = useRef(null);
   const selfInfoRef = useRef(null);
+  const pendingActionsRef = useRef({});
   const getWsRef = () => wsRef; // Export wsRef for external use
 
   const getSessionId = (type, id) => `${type}:${id}`;
@@ -260,6 +261,77 @@ export function useOneBot(url, token) {
     }
   }, []);
 
+  const sendActionWithEcho = useCallback((action, params = {}, echoPrefix = action) => {
+    return new Promise((resolve, reject) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        reject(new Error('WebSocket is not connected'));
+        return;
+      }
+
+      const echo = `${echoPrefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const timer = setTimeout(() => {
+        if (pendingActionsRef.current[echo]) {
+          delete pendingActionsRef.current[echo];
+          reject(new Error(`Action timeout: ${action}`));
+        }
+      }, 12000);
+
+      pendingActionsRef.current[echo] = {
+        resolve,
+        reject,
+        timer
+      };
+
+      wsRef.current.send(JSON.stringify({
+        action,
+        params,
+        echo
+      }));
+    });
+  }, []);
+
+  const updateNickname = useCallback(async (nickname) => {
+    const trimmed = (nickname || '').trim();
+    if (!trimmed) {
+      throw new Error('Nickname cannot be empty');
+    }
+
+    const result = await sendActionWithEcho('set_qq_profile', { nickname: trimmed }, 'set_nickname');
+
+    // Refresh self info after profile update
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        action: 'get_login_info',
+        echo: 'get_login_info'
+      }));
+    }
+    return result;
+  }, [sendActionWithEcho]);
+
+  const updateSignature = useCallback(async (signature) => {
+    const text = (signature || '').trim();
+    if (!text) {
+      throw new Error('Signature cannot be empty');
+    }
+
+    try {
+      // NapCat/Go-CQHTTP common API
+      const result = await sendActionWithEcho('set_self_longnick', { longNick: text }, 'set_signature');
+      return result;
+    } catch (err) {
+      // Fallback for implementations that map signature to personal_note
+      return sendActionWithEcho('set_qq_profile', { personal_note: text }, 'set_signature_alt');
+    }
+  }, [sendActionWithEcho]);
+
+  const getForwardMessage = useCallback(async (forwardId) => {
+    const id = String(forwardId || '').trim();
+    if (!id) {
+      throw new Error('forward id is required');
+    }
+    return sendActionWithEcho('get_forward_msg', { id }, 'get_forward_msg');
+  }, [sendActionWithEcho]);
+
   const addMessage = useCallback((msg) => {
     const isPrivate = msg.message_type === 'private';
     // For incoming messages:
@@ -358,7 +430,16 @@ export function useOneBot(url, token) {
         if (!isComponentMounted) return;
         try {
           const data = JSON.parse(event.data);
-          if (data.post_type === 'message') {
+          if (data.echo && pendingActionsRef.current[data.echo]) {
+            const pending = pendingActionsRef.current[data.echo];
+            clearTimeout(pending.timer);
+            delete pendingActionsRef.current[data.echo];
+            if (data.status === 'ok' || data.retcode === 0) {
+              pending.resolve(data);
+            } else {
+              pending.reject(new Error(data.message || `Action failed: ${data.echo}`));
+            }
+          } else if (data.post_type === 'message') {
             const isSelf = String(data.user_id) === String(selfInfoRef.current ? selfInfoRef.current.user_id : '');
             addMessage(Object.assign({}, data, { direction: isSelf ? 'outgoing' : 'incoming' }));
           } else if (data.echo === 'get_login_info') {
@@ -806,6 +887,12 @@ export function useOneBot(url, token) {
 
     return () => {
       isComponentMounted = false;
+      Object.keys(pendingActionsRef.current).forEach((echo) => {
+        const pending = pendingActionsRef.current[echo];
+        clearTimeout(pending.timer);
+        pending.reject(new Error('Connection closed'));
+      });
+      pendingActionsRef.current = {};
       if (wsRef.current) {
         wsRef.current.onclose = null; // Prevent reconnect on manual close
         wsRef.current.close();
@@ -1084,5 +1171,5 @@ export function useOneBot(url, token) {
     });
   }, [addMessage]);
 
-  return { status, messages, setMessages, sessions, sendMessage, sendImage, sendVideo, sendFile, fetchHistory, fetchGroupMemberList, fetchCustomFace, getWsRef, friends, groups, groupMembers, customFaces, selfInfo };
+  return { status, messages, setMessages, sessions, sendMessage, sendImage, sendVideo, sendFile, fetchHistory, fetchGroupMemberList, fetchCustomFace, getWsRef, friends, groups, groupMembers, customFaces, selfInfo, updateNickname, updateSignature, getForwardMessage };
 }

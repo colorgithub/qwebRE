@@ -1,19 +1,19 @@
 ﻿import React from 'react';
 import { Reply } from 'lucide-react';
 
-// 瑙ｆ瀽 CQ 鐮佸瓧绗︿覆涓烘暟缁勭粨鏋?
+// 解析 CQ 码字符串为消息段数组
 function parseCQCode(text) {
   if (typeof text !== 'string') return [{ type: 'text', data: { text: typeof text === 'object' ? JSON.stringify(text) : String(text) } }];
   
   const segments = [];
   let lastIndex = 0;
   
-  // 绠€鍗曠殑姝ｅ垯鍖归厤 CQ 鐮? [CQ:type,key=value,...]
+  // 简单正则匹配 CQ 码: [CQ:type,key=value,...]
   const regex = /\[CQ:([a-zA-Z0-9-_.]+)(?:,([^\]]+))?\]/g;
   let match;
 
   while ((match = regex.exec(text)) !== null) {
-    // 娣诲姞涔嬪墠鐨勭函鏂囨湰
+    // 添加 CQ 码前面的纯文本
     if (match.index > lastIndex) {
       segments.push({
         type: 'text',
@@ -25,13 +25,13 @@ function parseCQCode(text) {
     const paramsStr = match[2] || '';
     const data = {};
     
-    // 瑙ｆ瀽鍙傛暟
+    // 解析参数
     paramsStr.split(',').forEach(param => {
       const idx = param.indexOf('=');
       if (idx !== -1) {
         const key = param.substring(0, idx);
         const value = param.substring(idx + 1);
-        // 瑙ｇ爜杞箟瀛楃
+        // 解码转义字符
         data[key] = value.replace(/&#44;/g, ',').replace(/&amp;/g, '&').replace(/&#91;/g, '[').replace(/&#93;/g, ']');
       }
     });
@@ -40,7 +40,7 @@ function parseCQCode(text) {
     lastIndex = regex.lastIndex;
   }
 
-  // 娣诲姞鍓╀綑鐨勬枃鏈?
+  // 添加剩余文本
   if (lastIndex < text.length) {
     segments.push({
       type: 'text',
@@ -51,7 +51,7 @@ function parseCQCode(text) {
   return segments;
 }
 
-export default function MessageRenderer({ message, onAt, groupMembers = [] }) {
+export default function MessageRenderer({ message, onAt, groupMembers = [], resolveReplyMessage, onJumpToMessage, onViewForwardMessage }) {
   let segments = [];
 
   if (typeof message === 'string') {
@@ -59,7 +59,7 @@ export default function MessageRenderer({ message, onAt, groupMembers = [] }) {
   } else if (Array.isArray(message)) {
     segments = message;
   } else {
-    // 濡傛灉鏄叾浠栫被鍨嬶紙濡傚璞′絾涓嶆槸鏁扮粍锛夛紝杞负瀛楃涓叉樉绀?
+    // 其他类型（如对象但非数组）转为字符串显示
     segments = [{ type: 'text', data: { text: typeof message === 'object' ? JSON.stringify(message) : String(message) } }];
   }
 
@@ -75,7 +75,7 @@ export default function MessageRenderer({ message, onAt, groupMembers = [] }) {
              let imgSrc = segment.data.url || segment.data.file;
              if (!imgSrc) {
                console.warn('Image source not available:', segment.data);
-               return <span key={index}>[鍥剧墖]</span>;
+               return <span key={index}>[图片]</span>;
              }
              
              // Check if this is a sticker/face (should be displayed as image)
@@ -98,7 +98,7 @@ export default function MessageRenderer({ message, onAt, groupMembers = [] }) {
                if (!segment.data.url) {
                  // File path cannot be accessed in browser, show placeholder
                  console.warn('File path only, no HTTP URL available:', filePath);
-                 return <span key={index}>[鍥剧墖]</span>;
+                 return <span key={index}>[图片]</span>;
                }
              } else if (!imgSrc.startsWith('http') && !imgSrc.startsWith('data:')) {
               // If it's a raw base64 string (without data:image prefix)
@@ -110,7 +110,7 @@ export default function MessageRenderer({ message, onAt, groupMembers = [] }) {
               } else if (imgSrc.startsWith('/')) {
                 // Relative path, cannot be resolved without base URL
                 console.warn('Relative path cannot be resolved:', imgSrc);
-                return <span key={index}>[鍥剧墖]</span>;
+                return <span key={index}>[图片]</span>;
               }
             }
 
@@ -122,7 +122,7 @@ export default function MessageRenderer({ message, onAt, groupMembers = [] }) {
               <div key={index} className="msg-image-container">
                 <img 
                   src={finalImgSrc} 
-                  alt={isSticker ? "[琛ㄦ儏]" : "[鍥剧墖]"} 
+                  alt={isSticker ? "[表情]" : "[图片]"} 
                   className="msg-image" 
                   style={{
                     maxWidth: isSticker ? '150px' : '100%', 
@@ -145,10 +145,10 @@ export default function MessageRenderer({ message, onAt, groupMembers = [] }) {
                     e.target.style.display = 'none'; 
                     e.target.insertAdjacentHTML('afterend', `
                       <div style="margin-top: 4px; padding: 8px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; font-size: 0.8em;">
-                        <span style="color: #856404;">[${isSticker ? '琛ㄦ儏' : '鍥剧墖'}鍔犺浇澶辫触]</span>
+                        <span style="color: #856404;">[${isSticker ? '表情' : '图片'}加载失败]</span>
                         <br/>
                         <a href="${imgSrc}" target="_blank" rel="noopener noreferrer" style="color: #007bff; text-decoration: underline; word-break: break-all;">
-                          鐐瑰嚮鎵撳紑${isSticker ? '琛ㄦ儏' : '鍥剧墖'}閾炬帴
+                          点击打开${isSticker ? '表情' : '图片'}链接
                         </a>
                       </div>
                     `); 
@@ -161,10 +161,10 @@ export default function MessageRenderer({ message, onAt, groupMembers = [] }) {
           case 'video':
             // Video support - similar to image but with video player
             let videoSrc = segment.data.url || segment.data.file;
-            const videoTitle = segment.data.title || '瑙嗛';
+            const videoTitle = segment.data.title || '视频';
             
             if (!videoSrc) {
-              return <span key={index}>[瑙嗛]</span>;
+              return <span key={index}>[视频]</span>;
             }
             
             // Handle base64 video data
@@ -219,16 +219,16 @@ export default function MessageRenderer({ message, onAt, groupMembers = [] }) {
                     e.target.style.display = 'none';
                     e.target.insertAdjacentHTML('afterend', `
                       <div style="margin-top: 4px; padding: 8px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; font-size: 0.8em;">
-                        <span style="color: #856404;">[瑙嗛鍔犺浇澶辫触]</span>
+                        <span style="color: #856404;">[视频加载失败]</span>
                         <br/>
                         <a href="${videoSrc}" target="_blank" rel="noopener noreferrer" style="color: #007bff; text-decoration: underline; word-break: break-all;">
-                          鐐瑰嚮鎵撳紑瑙嗛閾炬帴
+                          点击打开视频链接
                         </a>
                       </div>
                     `);
                   }}
                 >
-                  鎮ㄧ殑娴忚鍣ㄤ笉鏀寔瑙嗛鎾斁
+                  您的浏览器不支持视频播放
                 </video>
                 <div style={{ marginTop: '4px', fontSize: '0.85em', color: '#666' }}>
                   {videoTitle}
@@ -237,8 +237,8 @@ export default function MessageRenderer({ message, onAt, groupMembers = [] }) {
             );
             
           case 'face':
-            // QQ 琛ㄦ儏鏀寔 - 浣跨敤瀹樻柟 CDN 鍔犺浇琛ㄦ儏鍥剧墖
-            // QQ 琛ㄦ儏 ID 鑼冨洿锛?-258锛堢粡鍏歌〃鎯咃級锛岃繕鏈夋洿澶氭墿灞曡〃鎯?
+            // QQ 表情支持：使用官方 CDN 加载表情图片
+            // 常见 QQ 表情 ID 范围 0-258（经典表情）
             const faceId = parseInt(segment.data.id);
             const faceUrl = `https://p.qpic.cn/face/${faceId}/0`;
             
@@ -276,20 +276,20 @@ export default function MessageRenderer({ message, onAt, groupMembers = [] }) {
             );
             
           case 'at':
-            // 浠庣兢鎴愬憳鍒楄〃涓煡鎵炬樀绉?
+            // 从群成员列表中查找昵称
             const qqId = String(segment.data.qq);
             let displayName = qqId;
             
-            // 鐗规畩澶勭悊鍏ㄤ綋鎴愬憳
+            // 特殊处理 @全体成员
             if (qqId === 'all') {
-              displayName = '鍏ㄤ綋鎴愬憳';
+              displayName = '全体成员';
             } else {
-              // 浠庣兢鎴愬憳鍒楄〃涓煡鎵?
+              // 从群成员列表中查找
               const member = groupMembers.find(m => String(m.user_id) === qqId);
               if (member) {
-                displayName = member.nickname || member.card || qqId;
+                displayName = member.card || member.nickname || qqId;
               } else if (segment.data.name) {
-                // 濡傛灉 CQ 鐮佷腑鏈?name 灞炴€э紝浼樺厛浣跨敤
+                // 若 CQ 码中带有 name 字段，则优先使用
                 displayName = segment.data.name;
               }
             }
@@ -307,6 +307,12 @@ export default function MessageRenderer({ message, onAt, groupMembers = [] }) {
             );
             
           case 'reply':
+            {
+              const replyId = segment.data?.id;
+              const resolved = typeof resolveReplyMessage === 'function'
+                ? resolveReplyMessage(replyId)
+                : null;
+
             return (
               <div 
                 key={index} 
@@ -319,21 +325,31 @@ export default function MessageRenderer({ message, onAt, groupMembers = [] }) {
                   marginBottom: '6px',
                   backgroundColor: 'rgba(0,0,0,0.03)',
                   padding: '4px 8px',
-                  borderRadius: '4px'
+                  borderRadius: '4px',
+                  cursor: onJumpToMessage ? 'pointer' : 'default'
                 }}
+                onClick={() => {
+                  if (onJumpToMessage && replyId !== undefined && replyId !== null) {
+                    onJumpToMessage(replyId);
+                  }
+                }}
+                title={onJumpToMessage ? '点击跳转到原消息' : ''}
               >
                 <div style={{fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px'}}>
-                  <Reply size={12} /> 鍥炲:
+                  <Reply size={12} /> 回复:
                 </div>
                 <div style={{opacity: 0.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>
-                  Message ID: {segment.data.id}
+                  {resolved
+                    ? `引用 ${resolved.sender}: ${resolved.text}`
+                    : `引用消息 ID: ${replyId}`}
                 </div>
               </div>
             );
+            }
 
           case 'file':
-            // 鏂囦欢娑堟伅娓叉煋
-            const fileName = segment.data?.name || '鏈煡鏂囦欢';
+            // 文件消息渲染
+            const fileName = segment.data?.name || '未知文件';
             const fileSize = segment.data?.size || 0;
             const fileBase64 = segment.data?.file || '';
             
@@ -345,7 +361,7 @@ export default function MessageRenderer({ message, onAt, groupMembers = [] }) {
               base64Length: fileBase64 ? fileBase64.length : 0
             });
             
-            // 鏍煎紡鍖栨枃浠跺ぇ灏?
+            // 格式化文件大小
             const formatFileSize = (bytes) => {
               if (bytes === 0) return '0 B';
               const k = 1024;
@@ -354,23 +370,23 @@ export default function MessageRenderer({ message, onAt, groupMembers = [] }) {
               return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
             };
             
-            // 鑾峰彇鏂囦欢鍥炬爣
+            // 获取文件图标
             const getFileIcon = (filename) => {
               const ext = filename.split('.').pop().toLowerCase();
-              if (['pdf'].includes(ext)) return '馃搫';
-              if (['doc', 'docx'].includes(ext)) return '馃摑';
-              if (['xls', 'xlsx'].includes(ext)) return '馃搳';
-              if (['ppt', 'pptx'].includes(ext)) return '馃搳';
-              if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return '馃摝';
-              if (['txt', 'md', 'json', 'js', 'css', 'html'].includes(ext)) return '馃搩';
-              if (['mp3', 'wav', 'flac', 'aac'].includes(ext)) return '馃幍';
-              if (['mp4', 'avi', 'mkv', 'mov', 'wmv'].includes(ext)) return '馃幀';
+              if (['pdf'].includes(ext)) return '[PDF]';
+              if (['doc', 'docx'].includes(ext)) return '[DOC]';
+              if (['xls', 'xlsx'].includes(ext)) return '[XLS]';
+              if (['ppt', 'pptx'].includes(ext)) return '[PPT]';
+              if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return '[ZIP]';
+              if (['txt', 'md', 'json', 'js', 'css', 'html'].includes(ext)) return '[TXT]';
+              if (['mp3', 'wav', 'flac', 'aac'].includes(ext)) return '[AUD]';
+              if (['mp4', 'avi', 'mkv', 'mov', 'wmv'].includes(ext)) return '[VID]';
               if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(ext)) return '🖼️';
-              if (['exe', 'msi', 'dmg'].includes(ext)) return '鈿欙笍';
-              return '馃搧';
+              if (['exe', 'msi', 'dmg'].includes(ext)) return '[EXE]';
+              return '[FILE]';
             };
             
-            // 鍒涘缓涓嬭浇閾炬帴 - 鍐呯疆鏂囦欢鍔犺浇鍣?
+            // 创建下载动作（前端 base64 下载）
             const handleDownload = () => {
               console.log('Download clicked:', { fileName, fileSize, hasBase64: !!fileBase64 });
               
@@ -420,7 +436,7 @@ export default function MessageRenderer({ message, onAt, groupMembers = [] }) {
                   alert('File download failed: ' + err.message + '\n\nPlease check console for details.');
                 }
               } else if (fileBase64 && fileBase64.startsWith('file://')) {
-                // NapCat 杩斿洖鐨勬枃浠惰矾寰?
+                // NapCat 返回的是服务端文件路径，浏览器无法直接访问
                 console.warn('File path detected, cannot download directly:', fileBase64);
                 alert('This file is stored on server and cannot be downloaded directly.\n\nPath: ' + fileBase64);
               } else {
@@ -448,7 +464,7 @@ export default function MessageRenderer({ message, onAt, groupMembers = [] }) {
                 onClick={handleDownload}
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f9fafb'}
-                title="鐐瑰嚮涓嬭浇鏂囦欢"
+                title="点击下载文件"
               >
                 <div style={{fontSize: '32px'}}>{getFileIcon(fileName)}</div>
                 <div style={{flex: 1, minWidth: 0}}>
@@ -457,23 +473,52 @@ export default function MessageRenderer({ message, onAt, groupMembers = [] }) {
                   </div>
                   <div style={{fontSize: '0.8em', color: '#6b7280', marginTop: '2px'}}>
                     {formatFileSize(fileSize)}
-                    {fileSize === 0 && ' (0 B - 鏂囦欢鍙兘宸叉崯鍧忔垨鏈繚瀛?'}
+                    {fileSize === 0 && ' (0 B - 文件可能已损坏或未保存)'}
                   </div>
                 </div>
-                <div style={{color: '#3b82f6', fontSize: '20px'}}>猬囷笍</div>
+                <div style={{color: '#3b82f6', fontSize: '20px'}}>⬇</div>
               </div>
             );
 
           case 'record':
-            return <div key={index} className="msg-record">[璇煶]</div>;
+            return <div key={index} className="msg-record">[语音]</div>;
             
           case 'share':
             return (
               <div key={index} className="msg-share" style={{border: '1px solid #ddd', borderRadius: '8px', padding: '8px', margin: '4px 0', cursor: 'pointer', background: '#fff'}} onClick={function() { if(segment.data.url) window.open(segment.data.url, '_blank'); }}>
-                <div style={{fontWeight: 'bold', fontSize: '0.9em', color: '#333'}}>{segment.data.title || '鍒嗕韩閾炬帴'}</div>
+                <div style={{fontWeight: 'bold', fontSize: '0.9em', color: '#333'}}>{segment.data.title || '分享链接'}</div>
                 {segment.data.content ? <div style={{fontSize: '0.8em', color: '#666', marginTop: '4px'}}>{segment.data.content}</div> : null}
               </div>
             );
+
+          case 'forward': {
+            const forwardId = segment.data?.id || segment.data?.resid || segment.data?.file || '';
+            return (
+              <div
+                key={index}
+                className="msg-forward"
+                style={{
+                  border: '1px solid #dbeafe',
+                  borderRadius: '8px',
+                  padding: '8px 10px',
+                  margin: '4px 0',
+                  background: '#eff6ff',
+                  cursor: onViewForwardMessage ? 'pointer' : 'default'
+                }}
+                onClick={() => {
+                  if (onViewForwardMessage && forwardId) {
+                    onViewForwardMessage(forwardId);
+                  }
+                }}
+                title={onViewForwardMessage ? '点击查看转发消息内容' : ''}
+              >
+                <div style={{ fontWeight: 'bold', color: '#1d4ed8', marginBottom: '2px' }}>转发消息</div>
+                <div style={{ fontSize: '12px', color: '#64748b' }}>
+                  {forwardId ? `ID: ${forwardId}` : '无可用 ID'}
+                </div>
+              </div>
+            );
+          }
 
           case 'json':
             try {
@@ -484,7 +529,7 @@ export default function MessageRenderer({ message, onAt, groupMembers = [] }) {
             }
 
           default:
-            // 灏濊瘯灞曠ず鏈煡鐨?CQ 鐮?
+            // 尝试显示未知 CQ 段
             return <span key={index} className="msg-unknown" title={JSON.stringify(segment.data)} style={{color: '#999'}}>[{segment.type}]</span>;
         }
       })}

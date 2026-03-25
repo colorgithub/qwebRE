@@ -1,153 +1,199 @@
-import React, { useState } from 'react';
-import { Settings, LogOut, Moon, Sun, Code, Server, MonitorSmartphone, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import {
+  Settings as SettingsIcon,
+  X,
+  Moon,
+  Sun,
+  LogOut,
+  UserCircle2,
+  Server,
+  Shield,
+} from 'lucide-react';
 import './Settings.css';
 
-export default function SettingsPanel({ 
-  isOpen, 
-  onClose, 
-  onLogout, 
-  darkMode, 
+export default function SettingsPanel({
+  isOpen,
+  onClose,
+  onLogout,
+  darkMode,
   onToggleDarkMode,
   config,
-  selfInfo 
+  selfInfo,
+  onUpdateNickname,
+  onUpdateSignature,
 }) {
-  const [showDeveloperOptions, setShowDeveloperOptions] = useState(false);
-  
-  // 检查是否为开发者账户
-  const isDeveloperAccount = config?.url === 'wss://sb.color111111.dpdns.org' && config?.token === 'wenchonghao223';
+  const [showToken, setShowToken] = useState(false);
+  const [nickname, setNickname] = useState('');
+  const [signature, setSignature] = useState('');
+  const [savingNickname, setSavingNickname] = useState(false);
+  const [savingSignature, setSavingSignature] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setNickname(selfInfo?.nickname || '');
+    setSignature(selfInfo?.longNick || selfInfo?.long_nick || selfInfo?.personal_note || '');
+  }, [isOpen, selfInfo]);
 
   if (!isOpen) return null;
 
+  const token = config?.token || '';
+  const maskedToken = token ? `${token.slice(0, 4)}****${token.slice(-4)}` : '未设置';
+
   return (
     <div className="settings-overlay" onClick={onClose}>
-      <div className="settings-panel" onClick={(e) => e.stopPropagation()}>
-        <div className="settings-header">
-          <h2>
-            <Settings size={24} />
-            设置
-          </h2>
-          <button className="settings-close" onClick={onClose}>
-            <X size={24} />
+      <aside
+        className={`settings-panel ${darkMode ? 'dark-mode' : ''}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="settings-header">
+          <div className="settings-title-wrap">
+            <SettingsIcon size={20} />
+            <h2>设置</h2>
+          </div>
+          <button type="button" className="settings-close" onClick={onClose} aria-label="关闭设置">
+            <X size={18} />
           </button>
-        </div>
+        </header>
 
         <div className="settings-content">
-          {/* 账户信息 */}
-          <div className="settings-section">
-            <h3>账户信息</h3>
-            <div className="account-info">
-              {selfInfo ? (
-                <>
-                  <div className="account-row">
-                    <span className="label">QQ 号:</span>
-                    <span className="value">{selfInfo.user_id}</span>
-                  </div>
-                  <div className="account-row">
-                    <span className="label">昵称:</span>
-                    <span className="value">{selfInfo.nickname}</span>
-                  </div>
-                </>
-              ) : (
-                <div className="account-row">
-                  <span className="label">状态:</span>
-                  <span className="value">获取中...</span>
-                </div>
-              )}
-              <div className="account-row">
-                <span className="label">服务器:</span>
-                <span className="value server-url" title={config?.url}>{config?.url}</span>
+          <section className="settings-section">
+            <h3>账号信息</h3>
+            <div className="settings-card">
+              <div className="info-row">
+                <span className="info-label">
+                  <UserCircle2 size={15} />
+                  QQ 号
+                </span>
+                <span className="info-value">{selfInfo?.user_id || '获取中...'}</span>
+              </div>
+              <div className="info-row">
+                <span className="info-label">昵称</span>
+                <span className="info-value">{selfInfo?.nickname || '获取中...'}</span>
               </div>
             </div>
-          </div>
+          </section>
 
-          {/* 外观设置 */}
-          <div className="settings-section">
-            <h3>外观</h3>
-            <div className="setting-item">
-              <div className="setting-info">
-                <div className="setting-icon">
-                  {darkMode ? <Moon size={20} /> : <Sun size={20} />}
-                </div>
-                <div className="setting-text">
-                  <div className="setting-title">深色模式</div>
-                  <div className="setting-description">切换深色/浅色主题</div>
-                </div>
+          <section className="settings-section">
+            <h3>连接信息</h3>
+            <div className="settings-card">
+              <div className="info-row">
+                <span className="info-label">
+                  <Server size={15} />
+                  服务器
+                </span>
+                <span className="info-value mono" title={config?.url}>
+                  {config?.url || '未配置'}
+                </span>
               </div>
-              <label className="toggle-switch">
-                <input 
-                  type="checkbox" 
-                  checked={darkMode} 
-                  onChange={onToggleDarkMode} 
-                />
-                <span className="toggle-slider"></span>
+              <div className="info-row">
+                <span className="info-label">
+                  <Shield size={15} />
+                  Token
+                </span>
+                <span className="info-value mono">{showToken ? token || '未设置' : maskedToken}</span>
+              </div>
+              <button type="button" className="small-btn" onClick={() => setShowToken((v) => !v)}>
+                {showToken ? '隐藏 Token' : '显示 Token'}
+              </button>
+            </div>
+          </section>
+
+          <section className="settings-section">
+            <h3>外观</h3>
+            <div className="settings-card">
+              <label className="switch-item">
+                <div className="switch-text">
+                  <span className="switch-title">{darkMode ? <Moon size={16} /> : <Sun size={16} />} 深色模式</span>
+                  <span className="switch-desc">切换浅色/深色主题</span>
+                </div>
+                <span className="toggle-switch">
+                  <input type="checkbox" checked={darkMode} onChange={onToggleDarkMode} />
+                  <span className="toggle-slider" />
+                </span>
               </label>
             </div>
-          </div>
+          </section>
 
-          {/* 账户操作 */}
-          <div className="settings-section">
-            <h3>账户操作</h3>
-            <button className="logout-btn" onClick={onLogout}>
-              <LogOut size={20} />
-              退出登录
-            </button>
-          </div>
-
-          {/* 开发者选项 - 仅特定账户可见 */}
-          {isDeveloperAccount && (
-            <div className="settings-section developer-section">
-              <div 
-                className="setting-item" 
-                onClick={() => setShowDeveloperOptions(!showDeveloperOptions)}
-                style={{ cursor: 'pointer' }}
-              >
-                <div className="setting-info">
-                  <div className="setting-icon developer-icon">
-                    <Code size={20} />
-                  </div>
-                  <div className="setting-text">
-                    <div className="setting-title">开发者选项</div>
-                    <div className="setting-description">管理服务器与 qwebRE</div>
-                  </div>
-                </div>
-                <div className="setting-arrow">
-                  {showDeveloperOptions ? '▼' : '▶'}
-                </div>
+          <section className="settings-section">
+            <h3>资料编辑</h3>
+            <div className="settings-card">
+              <div className="edit-row">
+                <label className="edit-label" htmlFor="nickname-input">昵称</label>
+                <input
+                  id="nickname-input"
+                  className="edit-input"
+                  type="text"
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                  placeholder="输入新昵称"
+                  maxLength={20}
+                />
+                <button
+                  type="button"
+                  className="save-btn"
+                  disabled={savingNickname}
+                  onClick={async () => {
+                    if (!onUpdateNickname) return;
+                    setSavingNickname(true);
+                    try {
+                      await onUpdateNickname(nickname);
+                    } finally {
+                      setSavingNickname(false);
+                    }
+                  }}
+                >
+                  {savingNickname ? '保存中...' : '保存昵称'}
+                </button>
               </div>
 
-              {showDeveloperOptions && (
-                <div className="developer-options">
-                  <div className="developer-option">
-                    <div className="developer-option-icon">
-                      <Server size={20} />
-                    </div>
-                    <div className="developer-option-text">
-                      <div className="developer-option-title">服务器管理</div>
-                      <div className="developer-option-description">查看和管理 WebSocket 服务器状态</div>
-                    </div>
-                  </div>
-                  
-                  <div className="developer-option">
-                    <div className="developer-option-icon">
-                      <MonitorSmartphone size={20} />
-                    </div>
-                    <div className="developer-option-text">
-                      <div className="developer-option-title">qwebRE 管理</div>
-                      <div className="developer-option-description">查看客户端状态和调试信息</div>
-                    </div>
-                  </div>
-
-                  <div className="developer-info">
-                    <div className="info-badge">开发者模式</div>
-                    <p>当前账户已启用开发者选项</p>
-                    <p className="info-note">更多功能即将推出...</p>
-                  </div>
-                </div>
-              )}
+              <div className="edit-row">
+                <label className="edit-label" htmlFor="signature-input">签名</label>
+                <textarea
+                  id="signature-input"
+                  className="edit-textarea"
+                  value={signature}
+                  onChange={(e) => setSignature(e.target.value)}
+                  placeholder="输入新的个性签名"
+                  rows={3}
+                  maxLength={120}
+                />
+                <button
+                  type="button"
+                  className="save-btn secondary"
+                  disabled={savingSignature}
+                  onClick={async () => {
+                    if (!onUpdateSignature) return;
+                    setSavingSignature(true);
+                    try {
+                      await onUpdateSignature(signature);
+                    } finally {
+                      setSavingSignature(false);
+                    }
+                  }}
+                >
+                  {savingSignature ? '保存中...' : '保存签名'}
+                </button>
+              </div>
             </div>
-          )}
+          </section>
         </div>
-      </div>
+
+        <footer className="settings-footer">
+          <button type="button" className="logout-btn" onClick={onLogout}>
+            <LogOut size={16} />
+            退出登录
+          </button>
+        </footer>
+      </aside>
     </div>
   );
 }

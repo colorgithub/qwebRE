@@ -8,7 +8,7 @@ import './ChatTabs.css';
 import './At.css';
 
 export default function Chat({ config }) {
-  const { status, messages, setMessages, sessions, sendMessage, sendImage, sendVideo, sendFile, fetchHistory, fetchGroupMemberList, fetchCustomFace, getWsRef, friends, groups, groupMembers, customFaces, selfInfo } = useOneBot(config.url, config.token);
+  const { status, messages, setMessages, sessions, sendMessage, sendImage, sendVideo, sendFile, fetchHistory, fetchGroupMemberList, fetchCustomFace, getWsRef, friends, groups, groupMembers, customFaces, selfInfo, updateNickname, updateSignature, getForwardMessage } = useOneBot(config.url, config.token);
   const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [inputMessage, setInputMessage] = useState('');
   const [atList, setAtList] = useState([]); // Array of {id, name}
@@ -35,6 +35,11 @@ export default function Chat({ config }) {
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 }); // Menu position
   const [fetchedMembersGroups, setFetchedMembersGroups] = useState({}); // Track which groups have had members fetched
   const [showSettings, setShowSettings] = useState(false); // Show settings panel
+  const [highlightedMessageId, setHighlightedMessageId] = useState(null);
+  const [showForwardModal, setShowForwardModal] = useState(false);
+  const [loadingForward, setLoadingForward] = useState(false);
+  const [forwardModalTitle, setForwardModalTitle] = useState('');
+  const [forwardMessages, setForwardMessages] = useState([]);
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('darkMode');
     return saved ? JSON.parse(saved) : false;
@@ -76,6 +81,26 @@ export default function Chat({ config }) {
     setDarkMode(!darkMode);
   };
 
+  const handleUpdateNickname = async (nickname) => {
+    try {
+      await updateNickname(nickname);
+      alert('昵称修改成功');
+    } catch (error) {
+      console.error('Failed to update nickname:', error);
+      alert('昵称修改失败：' + error.message);
+    }
+  };
+
+  const handleUpdateSignature = async (signature) => {
+    try {
+      await updateSignature(signature);
+      alert('签名修改成功');
+    } catch (error) {
+      console.error('Failed to update signature:', error);
+      alert('签名修改失败：' + error.message);
+    }
+  };
+
   const currentMessages = selectedSessionId ? (messages[selectedSessionId] || []) : [];
 
   // Helper to get current session info even if it's not in the sessions list yet
@@ -88,6 +113,135 @@ export default function Chat({ config }) {
   };
   
   const currentSession = getCurrentSessionInfo();
+  const currentGroupMembers = useMemo(() => {
+    if (!currentSession || currentSession.type !== 'group') return [];
+    const members = groupMembers[currentSession.id];
+    return Array.isArray(members) ? members : [];
+  }, [currentSession, groupMembers]);
+
+  const memberDisplayNameMap = useMemo(() => {
+    const map = new Map();
+    currentGroupMembers.forEach((member) => {
+      map.set(String(member.user_id), member.card || member.nickname || String(member.user_id));
+    });
+    return map;
+  }, [currentGroupMembers]);
+
+  const getMessagePreviewText = (message) => {
+    if (typeof message === 'string') return message;
+    if (!Array.isArray(message)) return '[消息]';
+
+    const parts = [];
+    message.forEach((segment) => {
+      if (!segment || typeof segment !== 'object') return;
+      if (segment.type === 'text') {
+        parts.push(segment.data?.text || '');
+      } else if (segment.type === 'at') {
+        if (String(segment.data?.qq) === 'all') {
+          parts.push('@全体成员');
+        } else {
+          parts.push(`@${segment.data?.name || segment.data?.qq || ''}`);
+        }
+      } else if (segment.type === 'image') {
+        parts.push('[图片]');
+      } else if (segment.type === 'face') {
+        parts.push('[表情]');
+      } else if (segment.type === 'video') {
+        parts.push('[视频]');
+      } else if (segment.type === 'record') {
+        parts.push('[语音]');
+      } else if (segment.type === 'file') {
+        parts.push(`[文件 ${segment.data?.name || ''}]`);
+      } else if (segment.type === 'share') {
+        parts.push(`[分享 ${segment.data?.title || ''}]`);
+      }
+    });
+
+    const text = parts.join(' ').trim();
+    return text || '[消息]';
+  };
+
+  const normalizeForwardMessages = (payload) => {
+    const data = payload?.data;
+    if (Array.isArray(data)) return data;
+    if (!data || typeof data !== 'object') return [];
+    if (Array.isArray(data.messages)) return data.messages;
+    if (Array.isArray(data.message)) return data.message;
+    if (Array.isArray(data.data)) return data.data;
+    return [];
+  };
+
+  const getDisplaySenderName = (msg, isSelf = false) => {
+    if (isSelf) return 'Me';
+    const userId = String(msg?.user_id ?? '');
+    const senderName = msg?.sender?.card || msg?.sender?.nickname || msg?.sender?.nick || msg?.sender?.name;
+
+    if (currentSession && currentSession.type === 'group') {
+      return memberDisplayNameMap.get(userId) || senderName || userId;
+    }
+    return senderName || userId;
+  };
+
+  const replyMessageMap = useMemo(() => {
+    const map = new Map();
+    currentMessages.forEach((msg) => {
+      if (msg?.message_id === undefined || msg?.message_id === null) return;
+      const isSelf = msg.direction === 'outgoing' || String(msg.user_id) === String(selfInfo ? selfInfo.user_id : '');
+      map.set(String(msg.message_id), {
+        sender: getDisplaySenderName(msg, isSelf),
+        text: getMessagePreviewText(msg.message),
+      });
+    });
+    return map;
+  }, [currentMessages, selfInfo, getDisplaySenderName]);
+
+  const resolveReplyMessage = (messageId) => {
+    if (messageId === undefined || messageId === null) return null;
+    return replyMessageMap.get(String(messageId)) || null;
+  };
+
+  const jumpToMessage = (messageId) => {
+    if (messageId === undefined || messageId === null) return;
+    const targetId = String(messageId);
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const safeId = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(targetId) : targetId.replace(/"/g, '\\"');
+    const target = container.querySelector(`[data-msg-id="${safeId}"]`);
+    if (!target) {
+      alert('未在当前已加载消息中找到被引用内容，请先加载更多历史消息。');
+      return;
+    }
+
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightedMessageId(targetId);
+    setTimeout(() => {
+      setHighlightedMessageId((prev) => (prev === targetId ? null : prev));
+    }, 1800);
+  };
+
+  const handleViewForwardMessage = async (forwardId) => {
+    if (!forwardId) {
+      alert('转发消息 ID 无效');
+      return;
+    }
+    setLoadingForward(true);
+    setShowForwardModal(true);
+    setForwardModalTitle(`转发消息 ${forwardId}`);
+    setForwardMessages([]);
+    try {
+      const resp = await getForwardMessage(forwardId);
+      const list = normalizeForwardMessages(resp);
+      setForwardMessages(list);
+    } catch (error) {
+      console.error('Failed to load forward messages:', error);
+      alert('获取转发消息失败：' + error.message);
+      setShowForwardModal(false);
+    } finally {
+      setLoadingForward(false);
+    }
+  };
+
   const displayedFaces = useMemo(() => {
     if (!Array.isArray(customFaces)) return [];
     return customFaces.filter((face) => {
@@ -210,7 +364,7 @@ export default function Chat({ config }) {
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
     if (file) {
-      // 妫€鏌ユ枃浠跺ぇ灏忥細100MB 闄愬埗锛堝浘鐗囧拰瑙嗛闄ゅ锛?
+      // 检查文件大小：100MB 限制（图片和视频除外）
       const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB in bytes
       if (!file.type.startsWith('image/') && !file.type.startsWith('video/') && file.size > MAX_FILE_SIZE) {
         alert(`File too large. Limit is 100MB (current: ${(file.size / (1024 * 1024)).toFixed(2)} MB).`);
@@ -637,7 +791,7 @@ export default function Chat({ config }) {
         { user_id: 'all', nickname: '全体成员' },
         ...members.map(member => ({
           user_id: String(member.user_id),
-          nickname: member.nickname || member.card || String(member.user_id)
+          nickname: member.card || member.nickname || String(member.user_id)
         }))
       ];
     }
@@ -665,10 +819,11 @@ export default function Chat({ config }) {
   };
 
   const handleReply = (msg) => {
+      const isSelf = msg.direction === 'outgoing' || String(msg.user_id) === String(selfInfo ? selfInfo.user_id : '');
       setReplyingTo({
           message_id: msg.message_id,
-          sender: (msg.sender && msg.sender.nickname) || msg.user_id,
-          text: typeof msg.message === 'string' ? msg.message : '[Rich Media]'
+          sender: getDisplaySenderName(msg, isSelf),
+          text: getMessagePreviewText(msg.message)
       });
       if (inputRef.current) inputRef.current.focus();
   };
@@ -1041,6 +1196,7 @@ export default function Chat({ config }) {
                   // Determine if the message was sent by the current logged-in user
                   // Some messages from history might not have direction set correctly
                   const isSelf = msg.direction === 'outgoing' || String(msg.user_id) === String(selfInfo ? selfInfo.user_id : '');
+                  const senderName = getDisplaySenderName(msg, isSelf);
                   const timeLimit = 120; // 2 minutes
                   const now = Math.floor(Date.now() / 1000);
                   const timeDiff = now - msg.time;
@@ -1063,7 +1219,9 @@ export default function Chat({ config }) {
                     style={{
                       cursor: msg.recalled ? 'not-allowed' : 'context-menu',
                       opacity: msg.recalled ? 0.6 : 1,
-                      position: 'relative'
+                      position: 'relative',
+                      outline: String(msg.message_id) === String(highlightedMessageId) ? '2px solid #3b82f6' : 'none',
+                      boxShadow: String(msg.message_id) === String(highlightedMessageId) ? '0 0 0 4px rgba(59,130,246,0.2)' : undefined
                     }}
                     title={msg.recalled ? '已撤回的消息无法操作' : '右键或长按查看更多操作'}
                   >
@@ -1087,11 +1245,11 @@ export default function Chat({ config }) {
                     <div className="message-header">
                       <span 
                         className="sender" 
-                        onClick={function() { if(!isSelf) handleAtUser(msg.user_id, msg.sender && msg.sender.nickname); }}
+                        onClick={function() { if(!isSelf) handleAtUser(msg.user_id, senderName); }}
                         style={{cursor: !isSelf && currentSession && currentSession.type === 'group' ? 'pointer' : 'default'}}
                         title={!isSelf && currentSession && currentSession.type === 'group' ? "Click to @ this user" : ""}
                       >
-                        {(msg.sender && msg.sender.nickname) || (isSelf ? 'Me' : msg.user_id)}
+                        {senderName}
                       </span>
                       <div className="message-meta-right">
                         <span className="time">{new Date(msg.time * 1000).toLocaleTimeString()}</span>
@@ -1105,6 +1263,9 @@ export default function Chat({ config }) {
                         message={msg.message} 
                         onAt={(qq, nickname) => handleAtUser(qq, nickname)}
                         groupMembers={currentSession && currentSession.type === 'group' ? (groupMembers[currentSession.id] || []) : []}
+                        resolveReplyMessage={resolveReplyMessage}
+                        onJumpToMessage={jumpToMessage}
+                        onViewForwardMessage={handleViewForwardMessage}
                       />
                     </div>
                   </div>
@@ -1755,6 +1916,46 @@ export default function Chat({ config }) {
               </div>
             </div>
           )}
+
+          {showForwardModal && (
+            <div className="modal-overlay" onClick={() => setShowForwardModal(false)}>
+              <div className="modal" style={{ maxWidth: '760px', width: '92vw', maxHeight: '80vh', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
+                <h3>{forwardModalTitle || '转发消息'}</h3>
+                <div style={{ maxHeight: '62vh', overflowY: 'auto', paddingRight: '6px' }}>
+                  {loadingForward ? (
+                    <div style={{ color: '#6b7280' }}>加载中...</div>
+                  ) : forwardMessages.length === 0 ? (
+                    <div style={{ color: '#6b7280' }}>没有可显示的转发内容</div>
+                  ) : (
+                    forwardMessages.map((item, idx) => {
+                      const senderName = item?.sender?.card || item?.sender?.nickname || item?.sender?.user_id || item?.user_id || '未知发送者';
+                      const sendTime = item?.time ? new Date(item.time * 1000).toLocaleString() : '';
+                      const content = item?.content || item?.message || [];
+                      return (
+                        <div key={idx} style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '10px', marginBottom: '10px', background: '#f9fafb' }}>
+                          <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '6px', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                            <span>{senderName}</span>
+                            <span>{sendTime}</span>
+                          </div>
+                          <MessageRenderer
+                            message={content}
+                            onAt={(qq, nickname) => handleAtUser(qq, nickname)}
+                            groupMembers={currentSession && currentSession.type === 'group' ? (groupMembers[currentSession.id] || []) : []}
+                            resolveReplyMessage={resolveReplyMessage}
+                            onJumpToMessage={jumpToMessage}
+                            onViewForwardMessage={handleViewForwardMessage}
+                          />
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+                <div className="modal-actions">
+                  <button type="button" onClick={() => setShowForwardModal(false)}>关闭</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1767,6 +1968,8 @@ export default function Chat({ config }) {
         onToggleDarkMode={toggleDarkMode}
         config={config}
         selfInfo={selfInfo}
+        onUpdateNickname={handleUpdateNickname}
+        onUpdateSignature={handleUpdateSignature}
       />
     </div>
   );
