@@ -131,6 +131,26 @@
   background-color: #2563eb;
 }
 
+.sidebar-logout-btn {
+  margin: 0 1rem 1rem;
+  padding: 0.7rem;
+  background-color: #ef4444;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: background-color 0.2s;
+}
+
+.sidebar-logout-btn:hover {
+  background-color: #dc2626;
+}
+
 .main-chat {
   flex: 1;
   min-width: 0;
@@ -170,6 +190,25 @@
   background-color: #f3f4f6;
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
+}
+
+.group-settings-btn {
+  border: 1px solid #dbeafe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.group-settings-btn:hover {
+  background: #dbeafe;
 }
 
 .messages-list {
@@ -844,6 +883,14 @@
   background-color: #4b5563;
 }
 
+.dark-mode .sidebar-logout-btn {
+  background-color: #7f1d1d;
+}
+
+.dark-mode .sidebar-logout-btn:hover {
+  background-color: #991b1b;
+}
+
 .dark-mode .main-chat {
   background-color: #111827;
 }
@@ -860,6 +907,16 @@
 .dark-mode .chat-type {
   background-color: #374151;
   color: #9ca3af;
+}
+
+.dark-mode .group-settings-btn {
+  border-color: #1e3a8a;
+  background: #1e293b;
+  color: #93c5fd;
+}
+
+.dark-mode .group-settings-btn:hover {
+  background: #334155;
 }
 
 .dark-mode .messages-list {

@@ -2,13 +2,13 @@
 import { useOneBot } from './useOneBot';
 import MessageRenderer from './MessageRenderer';
 import SettingsPanel from './Settings';
-import { MessageSquare, Users, User, Plus, Send, ArrowLeft, AtSign, Reply, X, Settings, Smile } from 'lucide-react';
+import { MessageSquare, Users, User, Plus, Send, ArrowLeft, AtSign, Reply, X, Settings, Smile, LogOut, Shield } from 'lucide-react';
 import './Chat.css';
 import './ChatTabs.css';
 import './At.css';
 
 export default function Chat({ config }) {
-  const { status, messages, setMessages, sessions, sendMessage, sendImage, sendVideo, sendFile, fetchHistory, fetchGroupMemberList, fetchCustomFace, getWsRef, friends, groups, groupMembers, customFaces, selfInfo, updateNickname, updateSignature, getForwardMessage } = useOneBot(config.url, config.token);
+  const { status, messages, setMessages, sessions, sendMessage, sendImage, sendVideo, sendFile, fetchHistory, fetchGroupInfo, fetchGroupMemberList, reloadCustomFace, loadMoreCustomFace, customFacePager, getWsRef, friends, groups, groupMembers, customFaces, selfInfo, updateNickname, updateSignature, updateGroupName, setGroupWholeBan, leaveGroup, getForwardMessage } = useOneBot(config.url, config.token);
   const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [inputMessage, setInputMessage] = useState('');
   const [atList, setAtList] = useState([]); // Array of {id, name}
@@ -35,6 +35,10 @@ export default function Chat({ config }) {
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 }); // Menu position
   const [fetchedMembersGroups, setFetchedMembersGroups] = useState({}); // Track which groups have had members fetched
   const [showSettings, setShowSettings] = useState(false); // Show settings panel
+  const [showGroupSettings, setShowGroupSettings] = useState(false);
+  const [groupSettingName, setGroupSettingName] = useState('');
+  const [groupWholeBanEnabled, setGroupWholeBanEnabled] = useState(false);
+  const [savingGroupSettings, setSavingGroupSettings] = useState(false);
   const [highlightedMessageId, setHighlightedMessageId] = useState(null);
   const [showForwardModal, setShowForwardModal] = useState(false);
   const [loadingForward, setLoadingForward] = useState(false);
@@ -98,6 +102,62 @@ export default function Chat({ config }) {
     } catch (error) {
       console.error('Failed to update signature:', error);
       alert('签名修改失败：' + error.message);
+    }
+  };
+
+  const openGroupSettings = () => {
+    if (!currentSession || currentSession.type !== 'group') return;
+    setGroupSettingName(currentSession.name || '');
+    setGroupWholeBanEnabled(false);
+    setShowGroupSettings(true);
+    fetchGroupInfo(currentSession.id);
+    fetchGroupMemberList(currentSession.id);
+  };
+
+  const handleSaveGroupName = async () => {
+    if (!currentSession || currentSession.type !== 'group') return;
+    setSavingGroupSettings(true);
+    try {
+      await updateGroupName(currentSession.id, groupSettingName);
+      alert('群名称修改成功');
+    } catch (error) {
+      console.error('Failed to update group name:', error);
+      alert('群名称修改失败：' + error.message);
+    } finally {
+      setSavingGroupSettings(false);
+    }
+  };
+
+  const handleToggleWholeBan = async () => {
+    if (!currentSession || currentSession.type !== 'group') return;
+    const next = !groupWholeBanEnabled;
+    setSavingGroupSettings(true);
+    try {
+      await setGroupWholeBan(currentSession.id, next);
+      setGroupWholeBanEnabled(next);
+      alert(next ? '已开启全员禁言' : '已关闭全员禁言');
+    } catch (error) {
+      console.error('Failed to set whole ban:', error);
+      alert('设置全员禁言失败：' + error.message);
+    } finally {
+      setSavingGroupSettings(false);
+    }
+  };
+
+  const handleLeaveGroup = async () => {
+    if (!currentSession || currentSession.type !== 'group') return;
+    if (!window.confirm('确定退出该群聊吗？')) return;
+    setSavingGroupSettings(true);
+    try {
+      await leaveGroup(currentSession.id, false);
+      setShowGroupSettings(false);
+      setSelectedSessionId(null);
+      alert('已退出群聊');
+    } catch (error) {
+      console.error('Failed to leave group:', error);
+      alert('退出群聊失败：' + error.message);
+    } finally {
+      setSavingGroupSettings(false);
     }
   };
 
@@ -250,6 +310,8 @@ export default function Chat({ config }) {
       return hasNumericId || hasUrl;
     });
   }, [customFaces]);
+  const isCustomFaceLoading = !!customFacePager?.loading;
+  const isCustomFaceEnd = customFacePager?.marker === 'end';
 
   const handleSend = (e) => {
     e.preventDefault();
@@ -257,7 +319,9 @@ export default function Chat({ config }) {
     if (!trimmedInput && atList.length === 0) return;
 
     if (trimmedInput === '/fetch_custom_face') {
-      fetchCustomFace();
+      if (!displayedFaces.length) {
+        reloadCustomFace();
+      }
       setShowFavoriteFacePanel(true);
       setInputMessage('');
       return;
@@ -672,7 +736,22 @@ export default function Chat({ config }) {
   const handleOpenFavoriteFacePanel = () => {
     setShowFavoriteFacePanel(true);
     setShowDrawer(false);
-    fetchCustomFace();
+    if (!displayedFaces.length) {
+      reloadCustomFace();
+    }
+  };
+
+  const handleReloadFavoriteFaces = () => {
+    reloadCustomFace();
+  };
+
+  const handleFavoriteFaceScroll = (event) => {
+    const el = event.currentTarget;
+    if (!el) return;
+    const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distanceToBottom <= 24 && !isCustomFaceLoading && !isCustomFaceEnd) {
+      loadMoreCustomFace();
+    }
   };
 
   const handleSendFavoriteFace = (face) => {
@@ -1140,6 +1219,9 @@ export default function Chat({ config }) {
           <button className="new-chat-btn" onClick={() => setShowNewChat(true)}>
             <Plus size={20} /> New Chat
           </button>
+          <button className="sidebar-logout-btn" onClick={handleLogout}>
+            <LogOut size={18} /> 退出登录
+          </button>
         </div>
       )}
 
@@ -1154,6 +1236,17 @@ export default function Chat({ config }) {
                   </button>
                 )}
                 <h3>{currentSession ? currentSession.name : selectedSessionId}</h3>
+                {currentSession && currentSession.type === 'group' && (
+                  <button
+                    type="button"
+                    className="group-settings-btn"
+                    onClick={openGroupSettings}
+                    title="群设置"
+                  >
+                    <Shield size={16} />
+                    群设置
+                  </button>
+                )}
                 <span className="chat-type">{currentSession ? currentSession.type : ''}</span>
               </div>
               <div className="messages-list" onScroll={handleScroll} ref={messagesContainerRef}>
@@ -1577,7 +1670,7 @@ export default function Chat({ config }) {
                         <div style={{ display: 'flex', gap: '6px' }}>
                           <button
                             type="button"
-                            onClick={fetchCustomFace}
+                            onClick={handleReloadFavoriteFaces}
                             className="favorite-face-refresh"
                             title="刷新收藏表情"
                           >
@@ -1592,7 +1685,7 @@ export default function Chat({ config }) {
                           </button>
                         </div>
                       </div>
-                      <div className="favorite-face-grid">
+                      <div className="favorite-face-grid" onScroll={handleFavoriteFaceScroll}>
                         {displayedFaces.map((face) => {
                           const faceId = face.faceId;
                           const faceUrl = face.url || (faceId !== null ? `https://p.qpic.cn/face/${faceId}/0` : '');
@@ -1624,8 +1717,16 @@ export default function Chat({ config }) {
                         })}
                         {displayedFaces.length === 0 && (
                           <div className="favorite-face-empty">
-                            暂无收藏表情，输入 <code>/fetch_custom_face</code> 或点“刷新”获取。
+                            {isCustomFaceLoading
+                              ? '正在加载收藏表情...'
+                              : <>暂无收藏表情，输入 <code>/fetch_custom_face</code> 或点“刷新”获取。</>}
                           </div>
+                        )}
+                        {displayedFaces.length > 0 && isCustomFaceLoading && (
+                          <div className="favorite-face-empty">正在加载更多收藏表情...</div>
+                        )}
+                        {displayedFaces.length > 0 && isCustomFaceEnd && (
+                          <div className="favorite-face-empty">已加载全部收藏表情（end）</div>
                         )}
                       </div>
                     </div>
@@ -1952,6 +2053,43 @@ export default function Chat({ config }) {
                 </div>
                 <div className="modal-actions">
                   <button type="button" onClick={() => setShowForwardModal(false)}>关闭</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showGroupSettings && currentSession && currentSession.type === 'group' && (
+            <div className="modal-overlay" onClick={() => setShowGroupSettings(false)}>
+              <div className="modal" onClick={(e) => e.stopPropagation()}>
+                <h3>群设置</h3>
+                <div className="form-group">
+                  <label>群号</label>
+                  <input type="text" value={currentSession.id} disabled />
+                </div>
+                <div className="form-group">
+                  <label>群名称</label>
+                  <input
+                    type="text"
+                    value={groupSettingName}
+                    onChange={(e) => setGroupSettingName(e.target.value)}
+                    maxLength={30}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>成员数（已加载）</label>
+                  <input
+                    type="text"
+                    value={Array.isArray(groupMembers[currentSession.id]) ? groupMembers[currentSession.id].length : 0}
+                    disabled
+                  />
+                </div>
+                <div className="modal-actions">
+                  <button type="button" onClick={() => fetchGroupMemberList(currentSession.id)} disabled={savingGroupSettings}>刷新成员</button>
+                  <button type="button" onClick={handleToggleWholeBan} disabled={savingGroupSettings}>
+                    {groupWholeBanEnabled ? '关闭全员禁言' : '开启全员禁言'}
+                  </button>
+                  <button type="button" onClick={handleSaveGroupName} className="primary" disabled={savingGroupSettings}>保存群名</button>
+                  <button type="button" onClick={handleLeaveGroup} style={{ color: '#dc2626' }} disabled={savingGroupSettings}>退出群</button>
                 </div>
               </div>
             </div>

@@ -11,6 +11,11 @@ export function useOneBot(url, token) {
   const [groups, setGroups] = useState([]);
   const [groupMembers, setGroupMembers] = useState({}); // { groupId: [member1, member2] }
   const [customFaces, setCustomFaces] = useState([]); // [{ faceId, url, raw }]
+  const [customFacePager, setCustomFacePager] = useState({
+    loading: false,
+    marker: 'idle', // idle | ready | end | error
+    count: 48
+  });
   const [selfInfo, setSelfInfo] = useState(null);
   const wsRef = useRef(null);
   const selfInfoRef = useRef(null);
@@ -250,16 +255,56 @@ export function useOneBot(url, token) {
   }, []);
 
   const fetchCustomFace = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        action: 'fetch_custom_face',
-        params: {},
-        echo: `fetch_custom_face_${Date.now()}`
-      }));
-    } else {
-      console.warn('WebSocket not connected, cannot fetch custom face');
-    }
+    return fetchCustomFaceWithPager({ pagerType: 'append', count: customFacePager.count });
+  }, [customFacePager.count]);
+
+  const mergeCustomFaces = useCallback((baseList, incomingList) => {
+    const merged = [];
+    const seen = new Set();
+    const pushUnique = (item) => {
+      const key = [
+        item?.key || '',
+        item?.faceId ?? '',
+        item?.faceCode || '',
+        item?.url || ''
+      ].join('|');
+      if (seen.has(key)) return;
+      seen.add(key);
+      merged.push(item);
+    };
+    (baseList || []).forEach(pushUnique);
+    (incomingList || []).forEach(pushUnique);
+    return merged;
   }, []);
+
+  const fetchCustomFaceWithPager = useCallback(({ pagerType = 'append', count = 48 } = {}) => {
+    if (!(wsRef.current && wsRef.current.readyState === WebSocket.OPEN)) {
+      console.warn('WebSocket not connected, cannot fetch custom face');
+      setCustomFacePager(prev => ({ ...prev, loading: false, marker: 'error' }));
+      return;
+    }
+    const safeCount = Number.isFinite(Number(count)) ? Math.max(1, Number(count)) : 48;
+    const safePagerType = pagerType === 'full' ? 'full' : 'append';
+    setCustomFacePager(prev => ({ ...prev, loading: true, marker: prev.marker === 'end' && safePagerType === 'append' ? 'end' : prev.marker, count: safeCount }));
+    wsRef.current.send(JSON.stringify({
+      action: 'fetch_custom_face',
+      params: { count: safeCount },
+      echo: `fetch_custom_face_${safePagerType}_${safeCount}_${Date.now()}`
+    }));
+  }, []);
+
+  const reloadCustomFace = useCallback(() => {
+    fetchCustomFaceWithPager({ pagerType: 'full', count: 48 });
+  }, [fetchCustomFaceWithPager]);
+
+  const loadMoreCustomFace = useCallback(() => {
+    setCustomFacePager(prev => {
+      if (prev.loading || prev.marker === 'end') return prev;
+      const nextCount = prev.count + 48;
+      fetchCustomFaceWithPager({ pagerType: 'append', count: nextCount });
+      return { ...prev, loading: true, count: nextCount };
+    });
+  }, [fetchCustomFaceWithPager]);
 
   const sendActionWithEcho = useCallback((action, params = {}, echoPrefix = action) => {
     return new Promise((resolve, reject) => {
@@ -322,6 +367,48 @@ export function useOneBot(url, token) {
       // Fallback for implementations that map signature to personal_note
       return sendActionWithEcho('set_qq_profile', { personal_note: text }, 'set_signature_alt');
     }
+  }, [sendActionWithEcho]);
+
+  const updateGroupName = useCallback(async (groupId, groupName) => {
+    const gid = Number(groupId);
+    const name = String(groupName || '').trim();
+    if (!Number.isFinite(gid) || gid <= 0) {
+      throw new Error('Invalid group id');
+    }
+    if (!name) {
+      throw new Error('Group name cannot be empty');
+    }
+    const result = await sendActionWithEcho(
+      'set_group_name',
+      { group_id: gid, group_name: name },
+      'set_group_name'
+    );
+    fetchGroupInfo(gid);
+    return result;
+  }, [sendActionWithEcho, fetchGroupInfo]);
+
+  const setGroupWholeBan = useCallback(async (groupId, enable) => {
+    const gid = Number(groupId);
+    if (!Number.isFinite(gid) || gid <= 0) {
+      throw new Error('Invalid group id');
+    }
+    return sendActionWithEcho(
+      'set_group_whole_ban',
+      { group_id: gid, enable: !!enable },
+      'set_group_whole_ban'
+    );
+  }, [sendActionWithEcho]);
+
+  const leaveGroup = useCallback(async (groupId, isDismiss = false) => {
+    const gid = Number(groupId);
+    if (!Number.isFinite(gid) || gid <= 0) {
+      throw new Error('Invalid group id');
+    }
+    return sendActionWithEcho(
+      'set_group_leave',
+      { group_id: gid, is_dismiss: !!isDismiss },
+      'set_group_leave'
+    );
   }, [sendActionWithEcho]);
 
   const getForwardMessage = useCallback(async (forwardId) => {
@@ -455,16 +542,31 @@ export function useOneBot(url, token) {
               setGroups(data.data);
             }
           } else if (data.echo && data.echo.startsWith('fetch_custom_face_')) {
+            const match = /^fetch_custom_face_(full|append)_(\d+)_/.exec(data.echo || '');
+            const pagerType = match ? match[1] : 'append';
+            const requestedCount = match ? parseInt(match[2], 10) : 48;
             if (data.status === 'ok') {
               const list = normalizeCustomFaces(data.data);
               const invalid = list.filter((item) => item.faceId === null && !item.url);
               if (invalid.length > 0) {
                 console.warn('Unsendable custom faces detected:', invalid.slice(0, 5));
               }
-              setCustomFaces(list);
+              if (pagerType === 'full') {
+                setCustomFaces(list);
+              } else {
+                setCustomFaces(prev => mergeCustomFaces(prev, list));
+              }
+              const isEnd = list.length === 0 || list.length < requestedCount;
+              setCustomFacePager(prev => ({
+                ...prev,
+                loading: false,
+                marker: isEnd ? 'end' : 'ready',
+                count: requestedCount
+              }));
               console.log('Custom faces fetched:', list.length);
             } else {
               console.error('Failed to fetch custom faces:', data);
+              setCustomFacePager(prev => ({ ...prev, loading: false, marker: 'error' }));
             }
           } else if (data.echo && data.echo.startsWith('delete_msg_')) {
             // Handle message deletion response
@@ -901,7 +1003,7 @@ export function useOneBot(url, token) {
         clearTimeout(reconnectTimer);
       }
     };
-  }, [url, token, addMessage, fetchContacts, normalizeCustomFaces]);
+  }, [url, token, addMessage, fetchContacts, normalizeCustomFaces, mergeCustomFaces]);
 
   const sendMessage = useCallback((targetId, message, messageType = 'private') => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -1171,5 +1273,5 @@ export function useOneBot(url, token) {
     });
   }, [addMessage]);
 
-  return { status, messages, setMessages, sessions, sendMessage, sendImage, sendVideo, sendFile, fetchHistory, fetchGroupMemberList, fetchCustomFace, getWsRef, friends, groups, groupMembers, customFaces, selfInfo, updateNickname, updateSignature, getForwardMessage };
+  return { status, messages, setMessages, sessions, sendMessage, sendImage, sendVideo, sendFile, fetchHistory, fetchGroupInfo, fetchGroupMemberList, fetchCustomFace, fetchCustomFaceWithPager, reloadCustomFace, loadMoreCustomFace, customFacePager, getWsRef, friends, groups, groupMembers, customFaces, selfInfo, updateNickname, updateSignature, updateGroupName, setGroupWholeBan, leaveGroup, getForwardMessage };
 }

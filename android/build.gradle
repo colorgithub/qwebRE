@@ -26,6 +26,21 @@ allprojects {
     }
 }
 
+subprojects { project ->
+    afterEvaluate {
+        if (project.name == 'capacitor-android' && project.hasProperty('android')) {
+            project.android {
+                namespace 'com.getcapacitor.android'
+            }
+        }
+        if (project.name == 'capacitor-cordova-android-plugins' && project.hasProperty('android')) {
+            project.android {
+                namespace 'capacitor.android.plugins'
+            }
+        }
+    }
+}
+
 task clean(type: Delete) {
     delete rootProject.buildDir
 }
