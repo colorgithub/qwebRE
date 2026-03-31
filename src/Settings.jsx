@@ -19,12 +19,15 @@ export default function SettingsPanel({
   onToggleDarkMode,
   config,
   selfInfo,
+  messagePrefix,
+  onUpdateMessagePrefix,
   onUpdateNickname,
   onUpdateSignature,
 }) {
   const [showToken, setShowToken] = useState(false);
   const [nickname, setNickname] = useState('');
   const [signature, setSignature] = useState('');
+  const [prefixDraft, setPrefixDraft] = useState('');
   const [savingNickname, setSavingNickname] = useState(false);
   const [savingSignature, setSavingSignature] = useState(false);
 
@@ -41,7 +44,8 @@ export default function SettingsPanel({
     if (!isOpen) return;
     setNickname(selfInfo?.nickname || '');
     setSignature(selfInfo?.longNick || selfInfo?.long_nick || selfInfo?.personal_note || '');
-  }, [isOpen, selfInfo]);
+    setPrefixDraft(messagePrefix || '');
+  }, [isOpen, selfInfo, messagePrefix]);
 
   if (!isOpen) return null;
 
@@ -181,6 +185,31 @@ export default function SettingsPanel({
                   }}
                 >
                   {savingSignature ? '保存中...' : '保存签名'}
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="settings-section">
+            <h3>消息前缀</h3>
+            <div className="settings-card">
+              <div className="edit-row">
+                <label className="edit-label" htmlFor="message-prefix-input">发送前自动添加</label>
+                <input
+                  id="message-prefix-input"
+                  className="edit-input"
+                  type="text"
+                  value={prefixDraft}
+                  onChange={(e) => setPrefixDraft(e.target.value)}
+                  placeholder="例如：[BOT] "
+                  maxLength={50}
+                />
+                <button
+                  type="button"
+                  className="save-btn"
+                  onClick={() => onUpdateMessagePrefix && onUpdateMessagePrefix(prefixDraft)}
+                >
+                  保存前缀
                 </button>
               </div>
             </div>

@@ -44,6 +44,7 @@ export default function Chat({ config }) {
   const [loadingForward, setLoadingForward] = useState(false);
   const [forwardModalTitle, setForwardModalTitle] = useState('');
   const [forwardMessages, setForwardMessages] = useState([]);
+  const [messagePrefix, setMessagePrefix] = useState(() => localStorage.getItem('message_prefix') || '');
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('darkMode');
     return saved ? JSON.parse(saved) : false;
@@ -72,11 +73,16 @@ export default function Chat({ config }) {
     }
   }, [darkMode]);
 
+  useEffect(() => {
+    localStorage.setItem('message_prefix', messagePrefix);
+  }, [messagePrefix]);
+
   // Handle logout
   const handleLogout = () => {
     localStorage.removeItem('napcat_url');
     localStorage.removeItem('napcat_token');
     localStorage.removeItem('darkMode');
+    localStorage.removeItem('message_prefix');
     window.location.reload();
   };
 
@@ -103,6 +109,10 @@ export default function Chat({ config }) {
       console.error('Failed to update signature:', error);
       alert('签名修改失败：' + error.message);
     }
+  };
+
+  const handleUpdateMessagePrefix = (prefix) => {
+    setMessagePrefix(prefix || '');
   };
 
   const openGroupSettings = () => {
@@ -347,7 +357,8 @@ export default function Chat({ config }) {
         });
         
         if (inputMessage) {
-            finalMessage.push({ type: 'text', data: { text: inputMessage } });
+            const textWithPrefix = `${messagePrefix || ''}${inputMessage}`;
+            finalMessage.push({ type: 'text', data: { text: textWithPrefix } });
         }
 
         sendMessage(session.id, finalMessage, session.type);
@@ -2106,6 +2117,8 @@ export default function Chat({ config }) {
         onToggleDarkMode={toggleDarkMode}
         config={config}
         selfInfo={selfInfo}
+        messagePrefix={messagePrefix}
+        onUpdateMessagePrefix={handleUpdateMessagePrefix}
         onUpdateNickname={handleUpdateNickname}
         onUpdateSignature={handleUpdateSignature}
       />
