@@ -2,7 +2,7 @@
 import { useOneBot } from './useOneBot';
 import MessageRenderer from './MessageRenderer';
 import SettingsPanel from './Settings';
-import { MessageSquare, Users, User, Plus, Send, ArrowLeft, AtSign, Reply, X, Settings, Smile, LogOut, Shield } from 'lucide-react';
+import { MessageSquare, Users, User, Send, ArrowLeft, AtSign, Reply, X, Settings, Smile, Shield } from 'lucide-react';
 import './Chat.css';
 import './ChatTabs.css';
 import './At.css';
@@ -1227,12 +1227,6 @@ export default function Chat({ config }) {
             </div>
           )}
 
-          <button className="new-chat-btn" onClick={() => setShowNewChat(true)}>
-            <Plus size={20} /> New Chat
-          </button>
-          <button className="sidebar-logout-btn" onClick={handleLogout}>
-            <LogOut size={18} /> 退出登录
-          </button>
         </div>
       )}
 
