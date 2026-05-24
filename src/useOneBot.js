@@ -229,12 +229,24 @@ export function useOneBot(url, token) {
         if (typeof item === 'number' || typeof item === 'string') {
           const raw = String(item);
           const parsed = parseInt(raw, 10);
-          const faceId = Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+          const isNumericOnly = /^\d+$/.test(raw.trim());
+          const faceId = isNumericOnly && Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+          // NapCat fetch_custom_face typically returns URL strings or filenames
+          let url = '';
+          if (!isNumericOnly && raw.trim()) {
+            // It's a URL or filename string, not a numeric face id
+            if (raw.startsWith('http://') || raw.startsWith('https://') || raw.startsWith('base64://') || raw.startsWith('file://')) {
+              url = raw;
+            } else {
+              // Treat as filename - NapCat custom face
+              url = raw;
+            }
+          }
           return {
             key: `${raw}_${index}`,
             faceId,
             faceCode: raw,
-            url: '',
+            url,
             raw: item
           };
         }
@@ -745,57 +757,34 @@ export function useOneBot(url, token) {
                 
                 setMessages(prev => {
                   const currentMsgs = prev[sessionId] || [];
-                  console.log('Current messages in session:', currentMsgs.length);
                   
-                  // Log current message IDs and seqs for debugging
-                  if (currentMsgs.length > 0) {
-                    console.log('Current message IDs:', currentMsgs.map(m => m.message_id));
-                    console.log('Current message seqs:', currentMsgs.map(m => m.message_seq));
-                  }
+                  // Determine if this is a "load more" (older messages) or a fresh reload
+                  // If echo contains 'latest', it's a fresh load; otherwise it's loading older messages
+                  const isFreshLoad = data.echo.endsWith('_latest');
                   
-                  // Use message_seq for deduplication (NapCat's primary key)
-                  // Fall back to message_id if message_seq is not available
-                  const currentSeqs = new Set(currentMsgs.map(m => m.message_seq || m.message_id));
-                  const newMsgs = historyMessages.filter(h => {
-                    const seq = h.message_seq || h.message_id;
-                    return !currentSeqs.has(seq);
-                  });
-                  
-                  // Log incoming message IDs and seqs for debugging
-                  console.log('Incoming message IDs:', historyMessages.map(m => m.message_id));
-                  console.log('Incoming message seqs:', historyMessages.map(m => m.message_seq));
-                  console.log('Current seqs Set:', Array.from(currentSeqs));
-                  
-                  console.log('Filtered new messages:', newMsgs.length, '(removed', historyMessages.length - newMsgs.length, 'duplicates)');
-                  
-                  const normalizedNew = newMsgs.map(m => {
-                    // Make sure user_id is compared correctly, convert to string
+                  const normalizedHistory = historyMessages.map(m => {
                     const isSelf = String(m.user_id) === String(selfInfoRef.current ? selfInfoRef.current.user_id : '');
                     return Object.assign({}, m, {
                       direction: isSelf ? 'outgoing' : 'incoming'
                     });
                   });
-                  
-                  if (normalizedNew.length > 0) {
-                    console.log('Adding new messages:', {
-                      sessionId,
-                      count: normalizedNew.length,
-                      oldestSeq: normalizedNew[0]?.message_seq,
-                      oldestTime: normalizedNew[0]?.time,
-                      newestSeq: normalizedNew[normalizedNew.length - 1]?.message_seq,
-                      newestTime: normalizedNew[normalizedNew.length - 1]?.time
+
+                  if (isFreshLoad) {
+                    // Fresh load: replace all messages with history data (no duplicates possible)
+                    return Object.assign({}, prev, {
+                      [sessionId]: normalizedHistory.sort((a, b) => a.time - b.time)
                     });
-                  } else {
-                    console.log('No new messages to add (all duplicates or empty)');
-                    console.log('Why all filtered out? Check if incoming seqs match current seqs');
                   }
 
-                  // If it's the very first load (currentMsgs is empty), just return sorted history.
-                  // If we are loading older messages, they should be PREPENDED to the current list.
-                  // OneBot usually returns messages in chronological order (oldest first in the array), 
-                  // so we just prepend the new batch before the old batch.
+                  // Loading older messages: deduplicate and prepend
+                  const currentSeqs = new Set(currentMsgs.map(m => String(m.message_seq || m.message_id)));
+                  const newMsgs = normalizedHistory.filter(h => {
+                    const seq = String(h.message_seq || h.message_id);
+                    return !currentSeqs.has(seq);
+                  });
+
                   return Object.assign({}, prev, {
-                    [sessionId]: [].concat(normalizedNew, currentMsgs).sort((a, b) => a.time - b.time)
+                    [sessionId]: [].concat(newMsgs, currentMsgs).sort((a, b) => a.time - b.time)
                   });
                 });
               } else {

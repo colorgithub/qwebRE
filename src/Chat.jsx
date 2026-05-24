@@ -317,7 +317,8 @@ export default function Chat({ config }) {
     return customFaces.filter((face) => {
       const hasNumericId = face && face.faceId !== null && face.faceId !== undefined;
       const hasUrl = !!(face && typeof face.url === 'string' && face.url.trim());
-      return hasNumericId || hasUrl;
+      const hasFaceCode = !!(face && typeof face.faceCode === 'string' && face.faceCode.trim());
+      return hasNumericId || hasUrl || hasFaceCode;
     });
   }, [customFaces]);
   const isCustomFaceLoading = !!customFacePager?.loading;
@@ -519,8 +520,21 @@ export default function Chat({ config }) {
     // Check if it's a right click or long press
     if (e.type === 'contextmenu' || isLongPress) {
       const rect = e.currentTarget.getBoundingClientRect();
-      const x = e.type === 'contextmenu' ? e.clientX : rect.left + rect.width / 2;
-      const y = e.type === 'contextmenu' ? e.clientY : rect.top + rect.height / 2;
+      let x = e.type === 'contextmenu' ? e.clientX : rect.left + rect.width / 2;
+      let y = e.type === 'contextmenu' ? e.clientY : rect.top + rect.height / 2;
+      
+      // 预估菜单高度（约 250px），防止超出视口底部
+      const menuHeight = 250;
+      const menuWidth = 200;
+      const viewportHeight = window.innerHeight;
+      const viewportWidth = window.innerWidth;
+      
+      if (y + menuHeight > viewportHeight) {
+        y = Math.max(10, viewportHeight - menuHeight - 10);
+      }
+      if (x + menuWidth > viewportWidth) {
+        x = Math.max(10, viewportWidth - menuWidth - 10);
+      }
       
       setSelectedMessage(msg);
       setMenuPosition({ x, y });
@@ -770,12 +784,15 @@ export default function Chat({ config }) {
     const session = currentSession;
     if (!session) return;
 
-    if (face.faceId !== null && face.faceId !== undefined) {
+    // 收藏表情优先用 URL/文件名 以 image 类型发送（收藏表情不是 QQ 系统表情）
+    const fileValue = face.url || face.faceCode || '';
+    if (fileValue) {
+      sendMessage(session.id, [{ type: 'image', data: { file: fileValue } }], session.type);
+    } else if (face.faceId !== null && face.faceId !== undefined) {
+      // 纯数字 ID 的情况，尝试作为系统表情发送
       sendMessage(session.id, [{ type: 'face', data: { id: String(face.faceId) } }], session.type);
-    } else if (face.url) {
-      sendMessage(session.id, [{ type: 'image', data: { file: face.url } }], session.type);
     } else {
-      alert('该收藏表情无法发送：缺少 face id 和 url。');
+      alert('该收藏表情无法发送：缺少 url 和文件名。');
       return;
     }
 
@@ -1121,13 +1138,11 @@ export default function Chat({ config }) {
     if (!sessions[sessionId]) {
         setNewChatType(type);
         setNewChatId(id);
-        setSelectedSessionId(sessionId);
-        // Load more messages for private chats (100) vs group chats (20)
-        const messageCount = type === 'private' ? 100 : 20;
-        fetchHistory(type, id, messageCount);
-    } else {
-        setSelectedSessionId(sessionId);
     }
+    setSelectedSessionId(sessionId);
+    // 每次进入聊天都重新加载历史记录
+    const messageCount = type === 'private' ? 100 : 20;
+    fetchHistory(type, id, messageCount);
     setActiveTab('sessions');
   };
 
@@ -1182,9 +1197,8 @@ export default function Chat({ config }) {
                   className={`session-item ${selectedSessionId === sessionId ? 'active' : ''}`}
                   onClick={() => {
                     setSelectedSessionId(sessionId);
-                    if (!messages[sessionId] || messages[sessionId].length === 0) {
-                      fetchHistory(session.type, session.id);
-                    }
+                    // 每次进入聊天都重新加载历史记录
+                    fetchHistory(session.type, session.id);
                   }}
                 >
                   <img src={session.avatar || 'https://via.placeholder.com/40'} alt="avatar" className="avatar" />
@@ -1693,8 +1707,25 @@ export default function Chat({ config }) {
                       <div className="favorite-face-grid" onScroll={handleFavoriteFaceScroll}>
                         {displayedFaces.map((face) => {
                           const faceId = face.faceId;
-                          const faceUrl = face.url || (faceId !== null ? `https://p.qpic.cn/face/${faceId}/0` : '');
-                          const faceLabel = faceId !== null ? String(faceId) : (face.faceCode || 'custom');
+                          // face.url may already be a full URL from NapCat, or a filename
+                          let faceUrl = face.url || '';
+                          if (!faceUrl && faceId !== null) {
+                            faceUrl = `https://p.qpic.cn/face/${faceId}/0`;
+                          }
+                          // 简化标签：如果是 URL 则提取文件名，否则直接显示
+                          let faceLabel = 'custom';
+                          if (faceId !== null) {
+                            faceLabel = String(faceId);
+                          } else if (face.faceCode) {
+                            try {
+                              const urlPath = new URL(face.faceCode).pathname;
+                              const fileName = urlPath.split('/').pop() || '';
+                              faceLabel = fileName.length > 12 ? fileName.slice(0, 12) + '…' : (fileName || 'custom');
+                            } catch {
+                              // Not a URL, use faceCode directly but truncate
+                              faceLabel = face.faceCode.length > 12 ? face.faceCode.slice(0, 12) + '…' : face.faceCode;
+                            }
+                          }
                           return (
                             <button
                               key={face.key || `${faceLabel}_${faceUrl}`}
