@@ -1,14 +1,19 @@
 ﻿# qwebRE
 
-基于 **React + Vite + Capacitor** 的 NapCat（OneBot 11）Web 客户端，可在浏览器运行，也可打包 Android APK。
+基于 **React + Vite + Capacitor** 的 NapCat（OneBot 11）Web 客户端，可在浏览器运行，也可打包 Android APK / Electron 桌面端。
 
 ## 功能概览
 
 - 通过 WebSocket 连接 NapCat/OneBot 服务
-- 私聊、群聊消息展示
+- 私聊、群聊消息展示（文本、图片、表情、视频、语音、文件、@、回复、分享、JSON 消息）
 - 多会话管理
+- 收藏表情发送
+- 消息撤回、删除、+1、设精
+- 群管理（全员禁言、退群、改群名）
+- 个人资料修改（昵称、签名）
 - 内置 Mock Server 便于本地联调
 - 支持 Android Debug / Release APK 构建
+- 支持 Electron Windows 桌面端打包
 
 ## 运行环境
 
@@ -94,11 +99,21 @@ cd android
 
 ## 版本说明（当前工程）
 
+- **应用版本：1.0.5**
 - Capacitor：5.x
 - Android Gradle Plugin：8.0.0
 - Gradle Wrapper：8.0.2
 - minSdkVersion：22（Android 5.1+）
 - targetSdkVersion：33
+
+## 更新日志
+
+### v1.0.5（2025-05-24）
+
+- 修复收藏表情功能：正确解析 NapCat 返回的 URL 字符串数组，修复显示和发送
+- 修复进入聊天时历史记录重复的问题
+- 修复右键菜单（撤回/删除）超出屏幕底部的问题
+- 每次进入聊天界面自动重新加载历史记录
 
 ## 常见问题
 
