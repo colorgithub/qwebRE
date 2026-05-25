@@ -114,21 +114,21 @@ export default function MessageRenderer({ message, onAt, groupMembers = [], reso
               }
             }
 
-            // Use proxy for HTTP images to bypass CORS
-            const PROXY_URL = 'http://localhost:3002/?url=';
-            const finalImgSrc = imgSrc.startsWith('http') ? PROXY_URL + encodeURIComponent(imgSrc) : imgSrc;
+            // Use original URL directly — <img> tags are not subject to CORS restrictions
+            const finalImgSrc = imgSrc;
 
             return (
               <div key={index} className="msg-image-container">
-                <img 
-                  src={finalImgSrc} 
-                  alt={isSticker ? "[表情]" : "[图片]"} 
-                  className="msg-image" 
+                <img
+                  src={finalImgSrc}
+                  alt={isSticker ? "[表情]" : "[图片]"}
+                  className="msg-image"
+                  referrerPolicy="no-referrer"
                   style={{
-                    maxWidth: isSticker ? '150px' : '100%', 
-                    maxHeight: isSticker ? '150px' : '300px', 
-                    borderRadius: '8px', 
-                    marginTop: '4px', 
+                    maxWidth: isSticker ? '150px' : '100%',
+                    maxHeight: isSticker ? '150px' : '300px',
+                    borderRadius: '8px',
+                    marginTop: '4px',
                     cursor: 'pointer',
                     objectFit: isSticker ? 'contain' : 'cover'
                   }}
@@ -178,17 +178,16 @@ export default function MessageRenderer({ message, onAt, groupMembers = [], reso
               isBase64 = true;
               console.log('Loaded base64 video:', videoType, 'length:', base64Data.length);
             } else if (videoSrc.startsWith('http')) {
-              // Use proxy for HTTP videos to bypass CORS
-              const VIDEO_PROXY_URL = 'http://localhost:3002/?url=';
-              videoSrc = VIDEO_PROXY_URL + encodeURIComponent(videoSrc);
-              console.log('Using video proxy:', videoSrc);
+              // <video> tags are not subject to CORS restrictions, use original URL directly
+              console.log('Using original video URL:', videoSrc);
             }
             
             return (
               <div key={index} className="msg-video-container" style={{ margin: '8px 0' }}>
-                <video 
+                <video
                   src={videoSrc}
                   controls
+                  referrerPolicy="no-referrer"
                   style={{
                     maxWidth: '100%',
                     maxHeight: '400px',

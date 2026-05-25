@@ -1735,17 +1735,20 @@ export default function Chat({ config }) {
                               title={`发送表情 ${faceLabel}`}
                             >
                               <div className="favorite-face-thumb">
-                                <span className="favorite-face-fallback" aria-hidden="true">😀</span>
                                 {faceUrl ? (
                                   <img
                                     src={faceUrl}
                                     alt={`face-${faceLabel}`}
                                     className="favorite-face-img"
+                                    referrerPolicy="no-referrer"
                                     onError={(e) => {
                                       e.currentTarget.style.display = 'none';
+                                      e.currentTarget.parentElement.innerHTML = '<span class="favorite-face-fallback">✕</span>';
                                     }}
                                   />
-                                ) : null}
+                                ) : (
+                                  <span className="favorite-face-fallback">✕</span>
+                                )}
                               </div>
                               <span className="favorite-face-id">{faceLabel}</span>
                             </button>
