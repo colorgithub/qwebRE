@@ -121,7 +121,7 @@ export function useOneBot(url, token) {
       // NapCat API names:
       // For group chats: get_group_msg_history
       // For private chats: get_forward_msg_history (OneBot standard)
-      const action = type === 'group' ? 'get_group_msg_history' : 'get_forward_msg_history';
+      const action = type === 'group' ? 'get_group_msg_history' : 'get_friend_msg_history';
       
       console.log('=== Fetch History Request ===', { type, id, count, messageId, messageSeq, action });
       
