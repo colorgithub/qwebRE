@@ -523,11 +523,13 @@ export default function Chat({ config }) {
       let x = e.type === 'contextmenu' ? e.clientX : rect.left + rect.width / 2;
       let y = e.type === 'contextmenu' ? e.clientY : rect.top + rect.height / 2;
       
-      // 预估菜单高度（约 250px），防止超出视口底部
-      const menuHeight = 250;
-      const menuWidth = 200;
+      // 预估菜单尺寸，防止超出视口边缘
       const viewportHeight = window.innerHeight;
       const viewportWidth = window.innerWidth;
+      // 小屏手表适配：窗口很窄时缩小预估菜单尺寸
+      const isWatchScreen = viewportWidth <= 320;
+      const menuHeight = isWatchScreen ? 180 : 250;
+      const menuWidth = isWatchScreen ? Math.min(160, viewportWidth - 20) : 200;
       
       if (y + menuHeight > viewportHeight) {
         y = Math.max(10, viewportHeight - menuHeight - 10);
@@ -2123,6 +2125,7 @@ export default function Chat({ config }) {
                   />
                 </div>
                 <div className="modal-actions">
+                  <button type="button" onClick={() => setShowGroupSettings(false)} disabled={savingGroupSettings}>关闭</button>
                   <button type="button" onClick={() => fetchGroupMemberList(currentSession.id)} disabled={savingGroupSettings}>刷新成员</button>
                   <button type="button" onClick={handleToggleWholeBan} disabled={savingGroupSettings}>
                     {groupWholeBanEnabled ? '关闭全员禁言' : '开启全员禁言'}

@@ -125,8 +125,8 @@ export default function MessageRenderer({ message, onAt, groupMembers = [], reso
                   className="msg-image"
                   referrerPolicy="no-referrer"
                   style={{
-                    maxWidth: isSticker ? '150px' : '100%',
-                    maxHeight: isSticker ? '150px' : '300px',
+                    maxWidth: isSticker ? 'min(150px, 40vw)' : '100%',
+                    maxHeight: isSticker ? 'min(150px, 40vw)' : 'min(300px, 60vh)',
                     borderRadius: '8px',
                     marginTop: '4px',
                     cursor: 'pointer',
@@ -190,7 +190,7 @@ export default function MessageRenderer({ message, onAt, groupMembers = [], reso
                   referrerPolicy="no-referrer"
                   style={{
                     maxWidth: '100%',
-                    maxHeight: '400px',
+                    maxHeight: 'min(400px, 60vh)',
                     borderRadius: '8px',
                     backgroundColor: '#000'
                   }}
@@ -465,7 +465,7 @@ export default function MessageRenderer({ message, onAt, groupMembers = [], reso
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f9fafb'}
                 title="点击下载文件"
               >
-                <div style={{fontSize: '32px'}}>{getFileIcon(fileName)}</div>
+                <div style={{fontSize: 'clamp(20px, 7vw, 32px)'}}>{getFileIcon(fileName)}</div>
                 <div style={{flex: 1, minWidth: 0}}>
                   <div style={{fontWeight: 'bold', color: '#1f2937', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>
                     {fileName}
