@@ -370,3 +370,29 @@
     transform: translateX(0);
   }
 }
+
+/* Small-screen smartwatch adaptation (<= 320px) */
+@media (max-width: 320px) {
+  .settings-header {
+    padding: 10px 12px;
+  }
+  .settings-title-wrap h2 {
+    font-size: 15px;
+  }
+  .settings-content {
+    padding: 10px;
+  }
+  .info-value {
+    max-width: 140px;
+  }
+  .settings-card {
+    padding: 6px 8px;
+  }
+  .switch-title {
+    font-size: 13px;
+  }
+  .logout-btn {
+    height: 36px;
+    font-size: 13px;
+  }
+}

@@ -89,3 +89,24 @@
   font-size: 0.75rem;
   color: #9ca3af;
 }
+
+/* Small-screen smartwatch adaptation (<= 320px) */
+@media (max-width: 320px) {
+  .tab-btn {
+    padding: 0.5rem;
+  }
+  .contacts-section h3 {
+    padding: 0.5rem 0.625rem;
+  }
+  .contact-item {
+    padding: 0.4rem 0.625rem;
+  }
+  .contact-item .avatar {
+    width: 30px;
+    height: 30px;
+    margin-right: 0.5rem;
+  }
+  .contact-name {
+    font-size: 0.85rem;
+  }
+}

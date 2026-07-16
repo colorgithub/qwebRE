@@ -50,3 +50,15 @@
     opacity: 1;
     transform: scale(1.2) rotate(90deg);
 }
+
+/* Small-screen smartwatch adaptation (<= 320px) */
+@media (max-width: 320px) {
+    .at-list {
+        max-width: 90px;
+        margin-right: 4px;
+    }
+    .at-tag {
+        font-size: 0.7rem;
+        padding: 1px 4px;
+    }
+}

@@ -8,7 +8,7 @@ import './ChatTabs.css';
 import './At.css';
 
 export default function Chat({ config }) {
-  const { status, messages, setMessages, sessions, sendMessage, sendImage, sendVideo, sendFile, fetchHistory, fetchGroupInfo, fetchGroupMemberList, reloadCustomFace, loadMoreCustomFace, customFacePager, getWsRef, friends, groups, groupMembers, customFaces, selfInfo, updateNickname, updateSignature, updateGroupName, setGroupWholeBan, leaveGroup, getForwardMessage } = useOneBot(config.url, config.token);
+  const { status, messages, setMessages, sessions, sendMessage, sendImage, sendVideo, sendFile, fetchHistory, fetchGroupInfo, fetchGroupMemberList, reloadCustomFace, loadMoreCustomFace, customFacePager, getWsRef, friends, groups, groupMembers, customFaces, selfInfo, updateNickname, updateSignature, updateGroupName, setGroupWholeBan, leaveGroup, getForwardMessage, getFile, getGroupFileUrl, getPrivateFileUrl } = useOneBot(config.url, config.token);
   const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [inputMessage, setInputMessage] = useState('');
   const [atList, setAtList] = useState([]); // Array of {id, name}
@@ -312,6 +312,72 @@ export default function Chat({ config }) {
     }
   };
 
+  const handleDownloadFile = async (fileSegmentData) => {
+    // fileSegmentData is the full segment.data from the file message
+    // Try all available download methods in order of reliability
+    const fileId = fileSegmentData?.file_id || '';
+    const busid = fileSegmentData?.busid || 0;
+    const fileField = fileSegmentData?.file || '';
+
+    // Derive filename from name/fname/file path
+    const extractName = (seg) => {
+      if (seg?.name) return seg.name;
+      if (seg?.fname) return seg.fname;
+      const path = seg?.file || seg?.url || '';
+      const clean = path.replace(/^file:\/\//, '').replace(/\\/g, '/');
+      const parts = clean.split('/');
+      return parts[parts.length - 1] || '';
+    };
+    const originalName = extractName(fileSegmentData);
+
+    // Method 1: get_group_file_url (QQ CDN URL, group files only)
+    if (fileId && currentSession?.type === 'group') {
+      try {
+        const result = await getGroupFileUrl(currentSession.id, fileId, busid);
+        const url = result?.data?.url;
+        if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+          return { data: { file: url, file_name: originalName } };
+        }
+      } catch (_) {}
+    }
+
+    // Method 2: get_private_file_url (QQ CDN URL, private files)
+    if (fileId) {
+      try {
+        const result = await getPrivateFileUrl(fileId);
+        const url = result?.data?.url;
+        if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+          return { data: { file: url, file_name: originalName } };
+        }
+      } catch (_) {}
+    }
+
+    // Method 3: Fallback to get_file (local path on NapCat server)
+    try {
+      const result = await getFile(fileId || fileField);
+      const data = result?.data?.data || result?.data;
+      if (data) {
+        const serverPath = data.file || data.url || '';
+        const fileName = data.file_name || '';
+        if (serverPath && !serverPath.startsWith('http://') && !serverPath.startsWith('https://')) {
+          try {
+            const wsUrl = new URL(config.url);
+            const host = wsUrl.hostname;
+            const wsPort = wsUrl.port || '3001';
+            const encodedName = encodeURIComponent(fileName || serverPath.split('/').pop() || 'file');
+            data._http_urls = [
+              `http://${host}:2000/download/file/${encodedName}`,
+              `http://${host}:${wsPort}/download/file/${encodedName}`,
+            ];
+          } catch (_) {}
+        }
+        return result;
+      }
+    } catch (_) {}
+
+    return null;
+  };
+
   const displayedFaces = useMemo(() => {
     if (!Array.isArray(customFaces)) return [];
     return customFaces.filter((face) => {
@@ -523,11 +589,13 @@ export default function Chat({ config }) {
       let x = e.type === 'contextmenu' ? e.clientX : rect.left + rect.width / 2;
       let y = e.type === 'contextmenu' ? e.clientY : rect.top + rect.height / 2;
       
-      // 预估菜单高度（约 250px），防止超出视口底部
-      const menuHeight = 250;
-      const menuWidth = 200;
+      // 预估菜单尺寸，防止超出视口边缘
       const viewportHeight = window.innerHeight;
       const viewportWidth = window.innerWidth;
+      // 小屏手表适配：窗口很窄时缩小预估菜单尺寸
+      const isWatchScreen = viewportWidth <= 320;
+      const menuHeight = isWatchScreen ? 180 : 250;
+      const menuWidth = isWatchScreen ? Math.min(160, viewportWidth - 20) : 200;
       
       if (y + menuHeight > viewportHeight) {
         y = Math.max(10, viewportHeight - menuHeight - 10);
@@ -1378,6 +1446,7 @@ export default function Chat({ config }) {
                         resolveReplyMessage={resolveReplyMessage}
                         onJumpToMessage={jumpToMessage}
                         onViewForwardMessage={handleViewForwardMessage}
+                        onDownloadFile={handleDownloadFile}
                       />
                     </div>
                   </div>
@@ -2084,6 +2153,7 @@ export default function Chat({ config }) {
                             resolveReplyMessage={resolveReplyMessage}
                             onJumpToMessage={jumpToMessage}
                             onViewForwardMessage={handleViewForwardMessage}
+                            onDownloadFile={handleDownloadFile}
                           />
                         </div>
                       );
@@ -2123,6 +2193,7 @@ export default function Chat({ config }) {
                   />
                 </div>
                 <div className="modal-actions">
+                  <button type="button" onClick={() => setShowGroupSettings(false)} disabled={savingGroupSettings}>关闭</button>
                   <button type="button" onClick={() => fetchGroupMemberList(currentSession.id)} disabled={savingGroupSettings}>刷新成员</button>
                   <button type="button" onClick={handleToggleWholeBan} disabled={savingGroupSettings}>
                     {groupWholeBanEnabled ? '关闭全员禁言' : '开启全员禁言'}

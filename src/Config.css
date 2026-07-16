@@ -141,3 +141,24 @@
 .dark-mode .connect-btn:hover {
   background-color: #2563eb;
 }
+
+/* Small-screen smartwatch adaptation (<= 320px) */
+@media (max-width: 320px) {
+  .config-form {
+    padding: 1rem;
+  }
+  .form-group {
+    margin-bottom: 1rem;
+  }
+  .form-group label {
+    font-size: 0.85rem;
+  }
+  .form-group input {
+    padding: 0.5rem;
+    font-size: 0.875rem;
+  }
+  .connect-btn {
+    padding: 0.5rem;
+    font-size: 0.875rem;
+  }
+}

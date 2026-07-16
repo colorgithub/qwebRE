@@ -51,7 +51,7 @@ function parseCQCode(text) {
   return segments;
 }
 
-export default function MessageRenderer({ message, onAt, groupMembers = [], resolveReplyMessage, onJumpToMessage, onViewForwardMessage }) {
+export default function MessageRenderer({ message, onAt, groupMembers = [], resolveReplyMessage, onJumpToMessage, onViewForwardMessage, onDownloadFile }) {
   let segments = [];
 
   if (typeof message === 'string') {
@@ -125,8 +125,8 @@ export default function MessageRenderer({ message, onAt, groupMembers = [], reso
                   className="msg-image"
                   referrerPolicy="no-referrer"
                   style={{
-                    maxWidth: isSticker ? '150px' : '100%',
-                    maxHeight: isSticker ? '150px' : '300px',
+                    maxWidth: isSticker ? 'min(150px, 40vw)' : '100%',
+                    maxHeight: isSticker ? 'min(150px, 40vw)' : 'min(300px, 60vh)',
                     borderRadius: '8px',
                     marginTop: '4px',
                     cursor: 'pointer',
@@ -190,7 +190,7 @@ export default function MessageRenderer({ message, onAt, groupMembers = [], reso
                   referrerPolicy="no-referrer"
                   style={{
                     maxWidth: '100%',
-                    maxHeight: '400px',
+                    maxHeight: 'min(400px, 60vh)',
                     borderRadius: '8px',
                     backgroundColor: '#000'
                   }}
@@ -347,29 +347,26 @@ export default function MessageRenderer({ message, onAt, groupMembers = [], reso
             }
 
           case 'file':
-            // 文件消息渲染
-            const fileName = segment.data?.name || '未知文件';
-            const fileSize = segment.data?.size || 0;
-            const fileBase64 = segment.data?.file || '';
-            
-            console.log('File message rendering:', {
-              fileName,
-              fileSize,
-              hasBase64: fileBase64 ? true : false,
-              base64Prefix: fileBase64 ? fileBase64.substring(0, 20) : 'N/A',
-              base64Length: fileBase64 ? fileBase64.length : 0
-            });
-            
-            // 格式化文件大小
+            const extractNameFromPath = (path) => {
+              if (!path || typeof path !== 'string') return '';
+              const clean = path.replace(/^file:\/\//, '').replace(/\\/g, '/');
+              const parts = clean.split('/');
+              return parts[parts.length - 1] || '';
+            };
+            const fileName = segment.data?.name || segment.data?.fname || extractNameFromPath(segment.data?.file) || extractNameFromPath(segment.data?.url) || '未知文件';
+            const fileSize = segment.data?.file_size || segment.data?.size || 0;
+            const fileUrl = segment.data?.url || '';
+            const fileData = segment.data?.file || '';
+            const fileId = segment.data?.file_id || '';
+
             const formatFileSize = (bytes) => {
               if (bytes === 0) return '0 B';
               const k = 1024;
               const sizes = ['B', 'KB', 'MB', 'GB'];
               const i = Math.floor(Math.log(bytes) / Math.log(k));
-              return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+              return (Math.round(bytes / Math.pow(k, i) * 100) / 100) + ' ' + sizes[i];
             };
-            
-            // 获取文件图标
+
             const getFileIcon = (filename) => {
               const ext = filename.split('.').pop().toLowerCase();
               if (['pdf'].includes(ext)) return '[PDF]';
@@ -382,100 +379,213 @@ export default function MessageRenderer({ message, onAt, groupMembers = [], reso
               if (['mp4', 'avi', 'mkv', 'mov', 'wmv'].includes(ext)) return '[VID]';
               if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(ext)) return '🖼️';
               if (['exe', 'msi', 'dmg'].includes(ext)) return '[EXE]';
+              if (['apk'].includes(ext)) return '[APK]';
               return '[FILE]';
             };
-            
-            // 创建下载动作（前端 base64 下载）
-            const handleDownload = () => {
-              console.log('Download clicked:', { fileName, fileSize, hasBase64: !!fileBase64 });
-              
-              if (fileBase64 && fileBase64.startsWith('base64://')) {
-                const base64Data = fileBase64.split('base64://')[1];
-                console.log('Base64 data length:', base64Data.length);
-                
-                try {
-                  // Step 1: Decode base64
-                  console.log('Decoding base64...');
-                  const byteCharacters = atob(base64Data);
-                  console.log('Decoded bytes:', byteCharacters.length);
-                  
-                  // Step 2: Convert to byte array
-                  const byteNumbers = new Array(byteCharacters.length);
-                  for (let i = 0; i < byteCharacters.length; i++) {
-                    byteNumbers[i] = byteCharacters.charCodeAt(i);
-                  }
-                  const byteArray = new Uint8Array(byteNumbers);
-                  console.log('Byte array created:', byteArray.length, 'bytes');
-                  
-                  // Step 3: Create Blob
-                  const blob = new Blob([byteArray]);
-                  console.log('Blob created:', blob.size, 'bytes, type:', blob.type || 'unknown');
-                  
-                  // Step 4: Create download link
-                  const blobUrl = URL.createObjectURL(blob);
-                  console.log('Blob URL created:', blobUrl);
-                  
-                  const a = document.createElement('a');
-                  a.href = blobUrl;
-                  a.download = fileName;
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  
-                  // Step 5: Cleanup
-                  setTimeout(() => {
-                    URL.revokeObjectURL(blobUrl);
-                    console.log('Blob URL revoked');
-                  }, 1000);
-                  
-                  console.log('Download completed successfully');
-                } catch (err) {
-                  console.error('Download failed:', err);
-                  console.error('Error stack:', err.stack);
-                  alert('File download failed: ' + err.message + '\n\nPlease check console for details.');
-                }
-              } else if (fileBase64 && fileBase64.startsWith('file://')) {
-                // NapCat 返回的是服务端文件路径，浏览器无法直接访问
-                console.warn('File path detected, cannot download directly:', fileBase64);
-                alert('This file is stored on server and cannot be downloaded directly.\n\nPath: ' + fileBase64);
-              } else {
-                console.error('File data not available:', { fileBase64, type: typeof fileBase64 });
-                alert('File data unavailable, cannot download.\n\nPossible reasons:\n1. Upload failed\n2. Data lost after refresh\n3. Server does not support this file type');
+
+            const [isDownloading, setIsDownloading] = React.useState(false);
+            const [downloadError, setDownloadError] = React.useState('');
+
+            const triggerDirectDownload = (url) => {
+              const a = document.createElement('a');
+              a.href = url;
+              a.target = '_blank';
+              a.rel = 'noopener noreferrer';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+            };
+
+            const triggerBlobDownload = (blob, name) => {
+              const blobUrl = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = blobUrl;
+              a.download = name;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+            };
+
+            const base64ToBlob = (b64) => {
+              const raw = b64.split('base64://')[1] || b64;
+              const chars = atob(raw);
+              const bytes = new Uint8Array(chars.length);
+              for (let i = 0; i < chars.length; i++) bytes[i] = chars.charCodeAt(i);
+              return new Blob([bytes]);
+            };
+
+            // Synchronous path for HTTP URLs (preserves user gesture)
+            const handleDownload = (e) => {
+              if (isDownloading) return;
+
+              if (fileUrl && (fileUrl.startsWith('http://') || fileUrl.startsWith('https://'))) {
+                triggerDirectDownload(fileUrl);
+                return;
               }
+              if (fileData && (fileData.startsWith('http://') || fileData.startsWith('https://'))) {
+                triggerDirectDownload(fileData);
+                return;
+              }
+              if (fileData && fileData.startsWith('base64://')) {
+                triggerBlobDownload(base64ToBlob(fileData), fileName);
+                return;
+              }
+
+              // Async paths: need WebSocket interaction
+              handleAsyncDownload();
+            };
+
+            const handleAsyncDownload = async () => {
+              setIsDownloading(true);
+              setDownloadError('');
+
+              try {
+                // Try WebSocket download APIs (type-aware: get_group_file_url, get_private_file_url, get_file)
+                if (typeof onDownloadFile === 'function') {
+                  // Pass the full segment.data so Chat.jsx can try all APIs with proper context
+                  const result = await onDownloadFile(segment.data);
+                  if (!result) {
+                    setDownloadError('文件下载失败：服务器无响应。');
+                    return;
+                  }
+                  const responseData = result?.data?.data || result?.data;
+                  if (responseData) {
+                    // Try HTTP URLs constructed by Chat from WebSocket host
+                    const httpUrls = responseData._http_urls || [];
+                    for (const url of httpUrls) {
+                      try {
+                        const resp = await fetch(url, { mode: 'cors' });
+                        if (resp.ok) {
+                          triggerBlobDownload(await resp.blob(), responseData.file_name || fileName);
+                          return;
+                        }
+                      } catch (_) {}
+                    }
+                    // Try file content (base64 or HTTP URL)
+                    const content = responseData.file || responseData.url || '';
+                    if (content.startsWith('base64://')) {
+                      triggerBlobDownload(base64ToBlob(content), fileName);
+                      return;
+                    }
+                    if (content.startsWith('http://') || content.startsWith('https://')) {
+                      const correctName = responseData.file_name || fileName;
+                      // Try fetch with CORS first
+                      try {
+                        const resp = await fetch(content, { mode: 'cors' });
+                        if (resp.ok) {
+                          triggerBlobDownload(await resp.blob(), correctName);
+                          return;
+                        }
+                      } catch (_) {}
+                      // Try no-cors fetch (opaque response, may work for some CDNs)
+                      try {
+                        const resp = await fetch(content, { mode: 'no-cors' });
+                        if (resp.type === 'opaque') {
+                          triggerBlobDownload(await resp.blob(), correctName);
+                          return;
+                        }
+                      } catch (_) {}
+                      // Last resort: direct download (browser uses server filename)
+                      // Open in new tab so user can save with correct name
+                      const a = document.createElement('a');
+                      a.href = content;
+                      a.target = '_blank';
+                      a.rel = 'noopener noreferrer';
+                      // Store original filename as dataset for potential use
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      return;
+                    }
+                    // Server-local file — show path for manual access
+                    const serverPath = responseData.file || responseData.file_path || responseData.url || '';
+                    const fname = responseData.file_name || fileName;
+                    setDownloadError(
+                      '文件存储在 NapCat 服务器本地，浏览器无法直接下载。\n\n' +
+                      '文件名：' + fname + '\n' +
+                      '服务器路径：' + serverPath + '\n\n' +
+                      (httpUrls.length > 0
+                        ? '已尝试 HTTP 下载链接但服务器无响应，请检查 NapCat 文件服务是否已暴露。\n' + httpUrls.join('\n')
+                        : '')
+                    );
+                    return;
+                  }
+                }
+
+                if (fileData && fileData.startsWith('file://')) {
+                  setDownloadError('文件存储在 NapCat 服务器本地，\n浏览器无法直接下载。');
+                  return;
+                }
+
+                // Show raw fields for debugging
+                const debugInfo = JSON.stringify({ name: fileName, url: fileUrl, file: fileData, file_id: fileId });
+                setDownloadError('此文件无法下载：缺少可用的下载链接。\n\n原始数据：' + debugInfo);
+              } catch (err) {
+                console.error('Download failed:', err);
+                setDownloadError('下载失败：' + err.message);
+              } finally {
+                setIsDownloading(false);
+              }
+            };
+
+            const handleClick = (e) => {
+              if (isDownloading) return;
+              if (downloadError) {
+                setDownloadError('');
+                return;
+              }
+              handleDownload(e);
             };
             
             return (
-              <div 
-                key={index} 
-                className="msg-file"
+              <div
+                key={index}
+                className={`msg-file${isDownloading ? ' msg-file-downloading' : ''}${downloadError ? ' msg-file-error' : ''}`}
                 style={{
                   border: '1px solid #e5e7eb',
                   borderRadius: '8px',
                   padding: '12px',
                   margin: '4px 0',
-                  backgroundColor: '#f9fafb',
+                  backgroundColor: isDownloading ? '#eff6ff' : downloadError ? '#fef2f2' : '#f9fafb',
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  cursor: 'pointer',
-                  transition: 'background-color 0.2s'
+                  flexDirection: 'column',
+                  gap: '8px',
+                  cursor: isDownloading ? 'wait' : 'pointer',
+                  transition: 'background-color 0.2s',
+                  opacity: isDownloading ? 0.7 : 1
                 }}
-                onClick={handleDownload}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f9fafb'}
-                title="点击下载文件"
+                onClick={handleClick}
+                title={downloadError ? '点击关闭提示后重试' : isDownloading ? '下载中...' : '点击下载文件'}
               >
-                <div style={{fontSize: '32px'}}>{getFileIcon(fileName)}</div>
-                <div style={{flex: 1, minWidth: 0}}>
-                  <div style={{fontWeight: 'bold', color: '#1f2937', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>
-                    {fileName}
+                {downloadError && (
+                  <div style={{
+                    fontSize: '12px',
+                    color: '#dc2626',
+                    background: '#fef2f2',
+                    padding: '6px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid #fca5a5',
+                    whiteSpace: 'pre-line',
+                    lineHeight: 1.5
+                  }}>
+                    {downloadError}
                   </div>
-                  <div style={{fontSize: '0.8em', color: '#6b7280', marginTop: '2px'}}>
-                    {formatFileSize(fileSize)}
-                    {fileSize === 0 && ' (0 B - 文件可能已损坏或未保存)'}
+                )}
+                <div style={{display: 'flex', alignItems: 'center', gap: '12px', width: '100%'}}>
+                  <div style={{fontSize: 'clamp(20px, 7vw, 32px)'}}>{getFileIcon(fileName)}</div>
+                  <div style={{flex: 1, minWidth: 0}}>
+                    <div style={{fontWeight: 'bold', color: '#1f2937', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>
+                      {fileName}
+                    </div>
+                    <div style={{fontSize: '0.8em', color: '#6b7280', marginTop: '2px'}}>
+                      {isDownloading ? '正在下载...' : formatFileSize(fileSize)}
+                    </div>
+                  </div>
+                  <div style={{color: isDownloading ? '#60a5fa' : '#3b82f6', fontSize: '20px'}}>
+                    {isDownloading ? '⏳' : '⬇'}
                   </div>
                 </div>
-                <div style={{color: '#3b82f6', fontSize: '20px'}}>⬇</div>
               </div>
             );
 

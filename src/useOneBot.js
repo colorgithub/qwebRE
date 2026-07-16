@@ -1262,5 +1262,21 @@ export function useOneBot(url, token) {
     });
   }, [addMessage]);
 
-  return { status, messages, setMessages, sessions, sendMessage, sendImage, sendVideo, sendFile, fetchHistory, fetchGroupInfo, fetchGroupMemberList, fetchCustomFace, fetchCustomFaceWithPager, reloadCustomFace, loadMoreCustomFace, customFacePager, getWsRef, friends, groups, groupMembers, customFaces, selfInfo, updateNickname, updateSignature, updateGroupName, setGroupWholeBan, leaveGroup, getForwardMessage };
+  const getFile = useCallback(async (fileId) => {
+    return sendActionWithEcho('get_file', { file: fileId, file_id: fileId }, 'get_file');
+  }, [sendActionWithEcho]);
+
+  const getGroupFileUrl = useCallback(async (groupId, fileId, busid) => {
+    return sendActionWithEcho('get_group_file_url', {
+      group_id: parseInt(groupId),
+      file_id: fileId,
+      busid: parseInt(busid || 0)
+    }, 'get_group_file_url');
+  }, [sendActionWithEcho]);
+
+  const getPrivateFileUrl = useCallback(async (fileId) => {
+    return sendActionWithEcho('get_private_file_url', { file_id: fileId }, 'get_private_file_url');
+  }, [sendActionWithEcho]);
+
+  return { status, messages, setMessages, sessions, sendMessage, sendImage, sendVideo, sendFile, fetchHistory, fetchGroupInfo, fetchGroupMemberList, fetchCustomFace, fetchCustomFaceWithPager, reloadCustomFace, loadMoreCustomFace, customFacePager, getWsRef, friends, groups, groupMembers, customFaces, selfInfo, updateNickname, updateSignature, updateGroupName, setGroupWholeBan, leaveGroup, getForwardMessage, getFile, getGroupFileUrl, getPrivateFileUrl };
 }

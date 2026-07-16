@@ -2,6 +2,7 @@
 
 基于 **React + Vite + Capacitor** 的 NapCat（OneBot 11）Web 客户端，可在浏览器运行，也可打包 Android APK / Electron 桌面端。
 
+### <a href="https://colorgithub.github.io/qwebRE/">访问demo</a>
 ## 功能概览
 
 - 通过 WebSocket 连接 NapCat/OneBot 服务
