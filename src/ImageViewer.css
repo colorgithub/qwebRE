@@ -1,0 +1,98 @@
+.image-viewer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: rgba(0, 0, 0, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+}
+
+.image-viewer-stage {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.image-viewer-stage img {
+  max-width: 92vw;
+  max-height: 86vh;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+  will-change: transform;
+}
+
+.image-viewer-stage.is-dragging img {
+  transition: none !important;
+}
+
+.image-viewer-error {
+  color: #ddd;
+  font-size: 15px;
+  padding: 12px 18px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+}
+
+.image-viewer-toolbar {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  padding: 6px;
+  z-index: 10;
+}
+
+.image-viewer-scale {
+  color: #eee;
+  font-size: 12px;
+  min-width: 48px;
+  text-align: center;
+}
+
+.image-viewer-btn {
+  background: transparent;
+  border: none;
+  color: #eee;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.image-viewer-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.image-viewer-close:hover {
+  background: rgba(239, 68, 68, 0.75) !important;
+}
+
+.image-viewer-hint {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 12px;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 6px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+}

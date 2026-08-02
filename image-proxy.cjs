@@ -7,6 +7,18 @@ const PORT = 3002;
 console.log(`Image proxy server starting on port ${PORT}...`);
 
 const server = http.createServer((req, res) => {
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Max-Age': '86400'
+    });
+    res.end();
+    return;
+  }
+
   // Parse the target URL from the query parameter
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const targetUrl = url.searchParams.get('url');
@@ -51,17 +63,6 @@ const server = http.createServer((req, res) => {
     res.writeHead(500, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Failed to fetch image', message: err.message }));
   });
-});
-
-// Handle OPTIONS requests for CORS preflight
-server.on('OPTIONS', (req, res) => {
-  res.writeHead(204, {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Max-Age': '86400'
-  });
-  res.end();
 });
 
 server.listen(PORT, () => {

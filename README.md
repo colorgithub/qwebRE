@@ -101,10 +101,10 @@ cd android
 ## 版本说明（当前工程）
 
 - **应用版本：1.0.5**
-- Capacitor：5.x
+- Capacitor：4.8.x
 - Android Gradle Plugin：8.0.0
 - Gradle Wrapper：8.0.2
-- minSdkVersion：22（Android 5.1+）
+- minSdkVersion：21（Android 5.0+）
 - targetSdkVersion：33
 
 ## 更新日志

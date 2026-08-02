@@ -5,13 +5,15 @@ android {
     compileSdkVersion rootProject.ext.compileSdkVersion
 
     def releaseKeystoreFile = file('android51-release.keystore')
-    def releaseStorePassword = project.findProperty('QWEBRE_STORE_PASSWORD') ?: 'qwebre123'
-    def releaseKeyAlias = project.findProperty('QWEBRE_KEY_ALIAS') ?: 'qwebre'
-    def releaseKeyPassword = project.findProperty('QWEBRE_KEY_PASSWORD') ?: 'qwebre123'
+    // 签名信息只从环境变量 / gradle properties 读取，不内置默认密码
+    def releaseStorePassword = project.findProperty('QWEBRE_STORE_PASSWORD')
+    def releaseKeyAlias = project.findProperty('QWEBRE_KEY_ALIAS')
+    def releaseKeyPassword = project.findProperty('QWEBRE_KEY_PASSWORD')
+    def hasReleaseSigning = releaseKeystoreFile.exists() && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
 
     signingConfigs {
         release {
-            if (releaseKeystoreFile.exists()) {
+            if (hasReleaseSigning) {
                 storeFile releaseKeystoreFile
                 storePassword releaseStorePassword
                 keyAlias releaseKeyAlias
@@ -33,14 +35,14 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
         ndk {
-            abiFilters 'armeabi-v7a'
+            abiFilters 'armeabi-v7a', 'arm64-v8a'
         }
     }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            if (releaseKeystoreFile.exists()) {
+            if (hasReleaseSigning) {
                 signingConfig signingConfigs.release
             }
         }

@@ -2,13 +2,41 @@
 import { useOneBot } from './useOneBot';
 import MessageRenderer from './MessageRenderer';
 import SettingsPanel from './Settings';
-import { MessageSquare, Users, User, Send, ArrowLeft, AtSign, Reply, X, Settings, Smile, Shield } from 'lucide-react';
+import ImageViewer from './ImageViewer';
+import { MessageSquare, Users, User, Send, ArrowLeft, AtSign, Reply, X, Settings, Smile, Shield, Undo2 } from 'lucide-react';
 import './Chat.css';
 import './ChatTabs.css';
 import './At.css';
 
+// 长按手势辅助（定时器挂在 DOM 元素上，避免在 map 中调用 hooks）
+function onMsgTouchStart(e, msg, openMenu) {
+  const el = e.currentTarget;
+  clearTimeout(el._lpTimer);
+  el._lpFired = false;
+  el._lpTimer = setTimeout(() => {
+    el._lpFired = true;
+    openMenu(msg, { type: 'longpress', currentTarget: el }, true);
+  }, 500);
+}
+
+function onMsgTouchMove(e) {
+  const el = e.currentTarget;
+  clearTimeout(el._lpTimer);
+  el._lpFired = false;
+}
+
+function onMsgTouchEnd(e) {
+  const el = e.currentTarget;
+  clearTimeout(el._lpTimer);
+  if (el._lpFired) {
+    e.preventDefault();
+    e.stopPropagation();
+    el._lpFired = false;
+  }
+}
+
 export default function Chat({ config }) {
-  const { status, messages, setMessages, sessions, sendMessage, sendImage, sendVideo, sendFile, fetchHistory, fetchGroupInfo, fetchGroupMemberList, reloadCustomFace, loadMoreCustomFace, customFacePager, getWsRef, friends, groups, groupMembers, customFaces, selfInfo, updateNickname, updateSignature, updateGroupName, setGroupWholeBan, leaveGroup, getForwardMessage, getFile, getGroupFileUrl, getPrivateFileUrl } = useOneBot(config.url, config.token);
+  const { status, messages, setMessages, sessions, sendMessage, sendImage, sendVideo, sendFile, fetchHistory, fetchGroupInfo, fetchGroupMemberList, fetchGroupWholeBan, reloadCustomFace, loadMoreCustomFace, customFacePager, getWsRef, friends, groups, groupMembers, customFaces, selfInfo, updateNickname, updateSignature, updateGroupName, setGroupWholeBan, leaveGroup, getForwardMessage, getFile, getGroupFileUrl, getPrivateFileUrl } = useOneBot(config.url, config.token);
   const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [inputMessage, setInputMessage] = useState('');
   const [atList, setAtList] = useState([]); // Array of {id, name}
@@ -50,6 +78,8 @@ export default function Chat({ config }) {
     return saved ? JSON.parse(saved) : false;
   });
   const [isUserAtBottom, setIsUserAtBottom] = useState(true); // Track if user is at bottom of messages
+  const [viewerImage, setViewerImage] = useState(null); // { src, alt } 内置图片查看器
+  const [skipPrefixOnce, setSkipPrefixOnce] = useState(false); // 单次取消前缀
   const fileInputRef = useRef(null);
   const videoInputRef = useRef(null);
   const fileUploadInputRef = useRef(null);
@@ -115,13 +145,27 @@ export default function Chat({ config }) {
     setMessagePrefix(prefix || '');
   };
 
-  const openGroupSettings = () => {
+  // 单次取消前缀：切换下一次文本发送是否跳过前缀
+  const handleToggleSkipPrefix = () => {
+    if (!messagePrefix) return;
+    setSkipPrefixOnce(prev => !prev);
+    setShowDrawer(false);
+  };
+
+  const openGroupSettings = async () => {
     if (!currentSession || currentSession.type !== 'group') return;
     setGroupSettingName(currentSession.name || '');
     setGroupWholeBanEnabled(false);
     setShowGroupSettings(true);
     fetchGroupInfo(currentSession.id);
     fetchGroupMemberList(currentSession.id);
+    // 查询当前全员禁言状态，避免开关状态显示错误
+    try {
+      const res = await fetchGroupWholeBan(currentSession.id);
+      setGroupWholeBanEnabled(!!(res?.data && res.data.enable));
+    } catch {
+      // API 不支持时保持默认关闭状态
+    }
   };
 
   const handleSaveGroupName = async () => {
@@ -224,6 +268,19 @@ export default function Chat({ config }) {
         parts.push(`[文件 ${segment.data?.name || ''}]`);
       } else if (segment.type === 'share') {
         parts.push(`[分享 ${segment.data?.title || ''}]`);
+      } else if (segment.type === 'json') {
+        try {
+          const jsonData = typeof segment.data?.data === 'string' ? JSON.parse(segment.data.data) : segment.data?.data;
+          if (jsonData && typeof jsonData.app === 'string' && jsonData.app.indexOf('miniapp') !== -1) {
+            parts.push('[小程序]');
+          } else if (jsonData && jsonData.prompt) {
+            parts.push(jsonData.prompt);
+          } else {
+            parts.push('[JSON]');
+          }
+        } catch {
+          parts.push('[JSON]');
+        }
       }
     });
 
@@ -312,6 +369,10 @@ export default function Chat({ config }) {
     }
   };
 
+  const handleViewImage = (src, alt) => {
+    if (src) setViewerImage({ src, alt: alt || '' });
+  };
+
   const handleDownloadFile = async (fileSegmentData) => {
     // fileSegmentData is the full segment.data from the file message
     // Try all available download methods in order of reliability
@@ -338,7 +399,7 @@ export default function Chat({ config }) {
         if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
           return { data: { file: url, file_name: originalName } };
         }
-      } catch (_) {}
+      } catch { /* ignore */ }
     }
 
     // Method 2: get_private_file_url (QQ CDN URL, private files)
@@ -349,7 +410,7 @@ export default function Chat({ config }) {
         if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
           return { data: { file: url, file_name: originalName } };
         }
-      } catch (_) {}
+      } catch { /* ignore */ }
     }
 
     // Method 3: Fallback to get_file (local path on NapCat server)
@@ -369,11 +430,11 @@ export default function Chat({ config }) {
               `http://${host}:2000/download/file/${encodedName}`,
               `http://${host}:${wsPort}/download/file/${encodedName}`,
             ];
-          } catch (_) {}
+          } catch { /* ignore */ }
         }
         return result;
       }
-    } catch (_) {}
+    } catch { /* ignore */ }
 
     return null;
   };
@@ -424,8 +485,11 @@ export default function Chat({ config }) {
         });
         
         if (inputMessage) {
-            const textWithPrefix = `${messagePrefix || ''}${inputMessage}`;
+            // 单次取消前缀：仅对这一次文本发送生效，发完自动恢复
+            const skipThisTime = !!messagePrefix && skipPrefixOnce;
+            const textWithPrefix = `${skipThisTime ? '' : (messagePrefix || '')}${inputMessage}`;
             finalMessage.push({ type: 'text', data: { text: textWithPrefix } });
+            setSkipPrefixOnce(false);
         }
 
         sendMessage(session.id, finalMessage, session.type);
@@ -438,6 +502,8 @@ export default function Chat({ config }) {
   const handleImageSelect = (e) => {
     const file = e.target.files[0];
     if (file && file.type.startsWith('image/')) {
+      // 释放上一个预览的 object URL，避免内存泄漏
+      if (selectedImage?.preview) URL.revokeObjectURL(selectedImage.preview);
       const preview = URL.createObjectURL(file);
       setSelectedImage({ file, preview });
     }
@@ -454,6 +520,7 @@ export default function Chat({ config }) {
     if (session) {
       try {
         await sendImage(session.id, selectedImage.file, session.type);
+        if (selectedImage?.preview) URL.revokeObjectURL(selectedImage.preview);
         setSelectedImage(null);
       } catch (error) {
         console.error('Failed to send image:', error);
@@ -463,6 +530,7 @@ export default function Chat({ config }) {
   };
 
   const handleRemoveImage = () => {
+    if (selectedImage?.preview) URL.revokeObjectURL(selectedImage.preview);
     setSelectedImage(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -472,6 +540,8 @@ export default function Chat({ config }) {
   const handleVideoSelect = (e) => {
     const file = e.target.files[0];
     if (file && file.type.startsWith('video/')) {
+      // 释放上一个预览的 object URL，避免内存泄漏
+      if (selectedVideo?.preview) URL.revokeObjectURL(selectedVideo.preview);
       const preview = URL.createObjectURL(file);
       setSelectedVideo({ file, preview });
     }
@@ -488,6 +558,7 @@ export default function Chat({ config }) {
     if (session) {
       try {
         await sendVideo(session.id, selectedVideo.file, session.type);
+        if (selectedVideo?.preview) URL.revokeObjectURL(selectedVideo.preview);
         setSelectedVideo(null);
       } catch (error) {
         console.error('Failed to send video:', error);
@@ -497,6 +568,7 @@ export default function Chat({ config }) {
   };
 
   const handleRemoveVideo = () => {
+    if (selectedVideo?.preview) URL.revokeObjectURL(selectedVideo.preview);
     setSelectedVideo(null);
     if (videoInputRef.current) {
       videoInputRef.current.value = '';
@@ -545,43 +617,10 @@ export default function Chat({ config }) {
     }
   };
 
-  // Long press detection for mobile
-  const useLongPress = (callback = () => {}, ms = 500) => {
-    const [startLongPress, setStartLongPress] = useState(0);
-
-    return {
-      onMouseDown: (e) => {
-        setStartLongPress(Date.now());
-      },
-      onMouseUp: (e) => {
-        if (Date.now() - startLongPress < ms) {
-          // Short press - do nothing, let normal click handle
-        }
-        setStartLongPress(0);
-      },
-      onMouseLeave: (e) => {
-        setStartLongPress(0);
-      },
-      onTouchStart: (e) => {
-        setStartLongPress(Date.now());
-      },
-      onTouchEnd: (e) => {
-        if (Date.now() - startLongPress < ms) {
-          // Short press - do nothing
-        }
-        setStartLongPress(0);
-      },
-      onTouchMove: (e) => {
-        // If user scrolls, cancel long press
-        setStartLongPress(0);
-      }
-    };
-  };
-
   // Handle message context menu
   const handleMessageContextMenu = (msg, e, isLongPress = false) => {
-    e.preventDefault();
-    e.stopPropagation();
+    if (typeof e.preventDefault === 'function') e.preventDefault();
+    if (typeof e.stopPropagation === 'function') e.stopPropagation();
     
     // Check if it's a right click or long press
     if (e.type === 'contextmenu' || isLongPress) {
@@ -665,7 +704,10 @@ export default function Chat({ config }) {
     const now = Math.floor(Date.now() / 1000);
     const timeDiff = now - selectedMessage.time;
     
-    if (timeDiff > timeLimit) return;
+    if (timeDiff > timeLimit) {
+      alert('超过 2 分钟，无法撤回该消息。');
+      return;
+    }
     
     const ws = getWsRef();
     if (!ws || !ws.current) return;
@@ -875,20 +917,12 @@ export default function Chat({ config }) {
     }
   };
 
-  const handleAtAll = () => {
-    setAtList(prev => [...prev, { id: 'all', name: '全体成员' }]);
-    if (inputRef.current) {
-      inputRef.current.focus();
-    }
-  };
-
   // Fetch group members when entering a group chat
   useEffect(() => {
     if (selectedSessionId && currentSession && currentSession.type === 'group') {
       const groupId = currentSession.id;
       // Only fetch if not already fetched
       if (!fetchedMembersGroups[groupId]) {
-        console.log('Fetching group members for group:', groupId);
         fetchGroupMemberList(groupId);
         setFetchedMembersGroups(prev => ({ ...prev, [groupId]: true }));
       }
@@ -1018,7 +1052,6 @@ export default function Chat({ config }) {
 
   const handleLoadMoreHistory = () => {
     if (!selectedSessionId || currentMessages.length === 0 || loadingHistory) {
-      console.log('Cannot load more:', { selectedSessionId, length: currentMessages.length, loadingHistory });
       return;
     }
     
@@ -1036,17 +1069,10 @@ export default function Chat({ config }) {
       
       oldestMessageIdRef.current = oldestMessage.message_id;
       setLoadingHistory(true);
-      console.log('>>>>>> TRIGGERING MANUAL HISTORY LOAD <<<<<<', {
-        type: session.type,
-        id: session.id,
-        count: 20,
-        messageId: oldestMessage.message_id,
-        messageSeq: oldestMessage.message_seq
-      });
       // Pass both message_id and message_seq
       fetchHistory(session.type, session.id, 20, oldestMessage.message_id, oldestMessage.message_seq);
     } else {
-      console.log('Missing session or oldest message:', { session, oldestMessage });
+      console.warn('Missing session or oldest message');
     }
   };
 
@@ -1057,44 +1083,17 @@ export default function Chat({ config }) {
     const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
     setIsUserAtBottom(isAtBottom);
     
-    console.log('Scroll event:', {
-      scrollTop,
-      threshold: 50,
-      isNearTop: scrollTop <= 50,
-      loadingHistory,
-      selectedSessionId,
-      messageCount: currentMessages.length,
-      oldestMessageIdRef: oldestMessageIdRef.current,
-      isAtBottom
-    });
-    
     // Check if we hit the top threshold
     if (scrollTop <= 50 && !loadingHistory && selectedSessionId && currentMessages.length > 0) {
       const oldestMessage = currentMessages[0];
       const session = sessions[selectedSessionId] || getCurrentSessionInfo();
       
-      console.log('Checking scroll load conditions:', {
-        hasSession: !!session,
-        hasOldestMessage: !!oldestMessage,
-        oldestMessage,
-        session
-      });
-      
       if (session && oldestMessage) {
         // Use message_id for tracking (NapCat uses message_id for pagination)
         const currentId = oldestMessage.message_id;
         
-        console.log('ID check:', {
-          currentId,
-          currentIdType: typeof currentId,
-          oldestMessageIdRef: oldestMessageIdRef.current,
-          shouldSkip: oldestMessageIdRef.current === currentId,
-          fullMessage: oldestMessage
-        });
-        
         // Prevent multiple triggers by checking if we just tried to load for this ID
         if (oldestMessageIdRef.current === currentId) {
-          console.log('Skipping load - same ID as before');
           return;
         }
 
@@ -1105,13 +1104,6 @@ export default function Chat({ config }) {
         
         oldestMessageIdRef.current = currentId;
         setLoadingHistory(true);
-        console.log('>>>>>> TRIGGERING HISTORY LOAD <<<<<<', {
-          type: session.type,
-          id: session.id,
-          count: 20,
-          messageId: oldestMessage.message_id,
-          messageSeq: oldestMessage.message_seq
-        });
         // Pass both message_id and message_seq
         fetchHistory(session.type, session.id, 20, oldestMessage.message_id, oldestMessage.message_seq);
       }
@@ -1141,26 +1133,22 @@ export default function Chat({ config }) {
 
     const isNewMessage = currentMessages.length > prevMessagesLength.current;
     const isHistoryLoad = isNewMessage && oldestMessageIdRef.current !== null;
-    const isSessionSwitch = prevSessionId.current !== selectedSessionId;
     
     // Check if this is a new session or messages just loaded from localStorage
     if (prevMessagesLength.current === 0 && currentMessages.length > 0) {
         // Initial load - always scroll to bottom when opening a chat
-        console.log('Initial load - scroll to bottom, messages:', currentMessages.length);
         
         // Use setTimeout to ensure DOM is rendered
         setTimeout(() => {
             if (messagesEndRef.current) {
                 messagesEndRef.current.scrollIntoView({ behavior: "auto" });
-                console.log('Scrolled to bottom');
             }
             setIsUserAtBottom(true);
         }, 100);
     } else if (isNewMessage) {
         if (isHistoryLoad) {
-            // History was loaded! 
+            // History was loaded!
             // Restore exact scroll position relative to the oldest message before load
-            console.log('History loaded - restoring scroll position');
             const oldFirstMsgEl = container.querySelector(`[data-msg-id="${oldestMessageIdRef.current}"]`);
             if (oldFirstMsgEl) {
                 container.scrollTop = oldFirstMsgEl.offsetTop - scrollOffsetBeforeLoad.current;
@@ -1175,12 +1163,10 @@ export default function Chat({ config }) {
             const lastMsg = currentMessages[currentMessages.length - 1];
             if (lastMsg && lastMsg.direction === 'outgoing') {
                 // User sent a message - always scroll to bottom
-                console.log('Outgoing message - scroll to bottom');
                 if (messagesEndRef.current) messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
                 setIsUserAtBottom(true);
             } else {
                 // Received a message - only scroll if user was already at bottom
-                console.log('Received message - isUserAtBottom:', isUserAtBottom);
                 if (isUserAtBottom) {
                     if (messagesEndRef.current) messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
                 }
@@ -1200,7 +1186,7 @@ export default function Chat({ config }) {
     setIsUserAtBottom(true); // Reset to true when switching chats
   }, [selectedSessionId]);
 
-  const handleContactClick = (type, id, name, avatar) => {
+  const handleContactClick = (type, id) => {
     const sessionId = `${type}:${id}`;
     
     if (!sessions[sessionId]) {
@@ -1377,15 +1363,10 @@ export default function Chat({ config }) {
                   // Some messages from history might not have direction set correctly
                   const isSelf = msg.direction === 'outgoing' || String(msg.user_id) === String(selfInfo ? selfInfo.user_id : '');
                   const senderName = getDisplaySenderName(msg, isSelf);
-                  const timeLimit = 120; // 2 minutes
-                  const now = Math.floor(Date.now() / 1000);
-                  const timeDiff = now - msg.time;
-                  const canRecall = isSelf && timeDiff <= timeLimit;
-                  const isAdmin = isUserAdminOrOwner();
                   
                   return (
                   <div 
-                    key={index} 
+                    key={msg.message_id != null ? String(msg.message_id) : `msg_${index}`}
                     data-msg-id={msg.message_id} 
                     className={`message ${isSelf ? 'sent' : 'received'} ${msg.essence ? 'essence-message' : ''} ${msg.recalled ? 'recalled-message' : ''}`}
                     onContextMenu={(e) => {
@@ -1396,6 +1377,9 @@ export default function Chat({ config }) {
                       }
                       handleMessageContextMenu(msg, e);
                     }}
+                    onTouchStart={(e) => onMsgTouchStart(e, msg, handleMessageContextMenu)}
+                    onTouchMove={onMsgTouchMove}
+                    onTouchEnd={onMsgTouchEnd}
                     style={{
                       cursor: msg.recalled ? 'not-allowed' : 'context-menu',
                       opacity: msg.recalled ? 0.6 : 1,
@@ -1447,6 +1431,7 @@ export default function Chat({ config }) {
                         onJumpToMessage={jumpToMessage}
                         onViewForwardMessage={handleViewForwardMessage}
                         onDownloadFile={handleDownloadFile}
+                        onViewImage={handleViewImage}
                       />
                     </div>
                   </div>
@@ -1454,6 +1439,14 @@ export default function Chat({ config }) {
                 <div ref={messagesEndRef} />
               </div>
               <form onSubmit={handleSend} className="message-input-area">
+                {skipPrefixOnce && messagePrefix && (
+                  <div className="skip-prefix-bar">
+                    <span>本次发送将不使用消息前缀</span>
+                    <button type="button" onClick={() => setSkipPrefixOnce(false)} title="取消">
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
                 {replyingTo && (
                   <div className="reply-preview">
                     <div className="reply-preview-info">
@@ -1703,6 +1696,32 @@ export default function Chat({ config }) {
                         >
                           <Smile size={20} style={{ color: '#6b7280' }} />
                           <span style={{ color: '#1f2937', fontSize: '14px' }}>收藏表情</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleToggleSkipPrefix}
+                          disabled={!messagePrefix}
+                          title={messagePrefix ? '下次发送文本时不再自动添加前缀' : '请先在设置中配置消息前缀'}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '10px',
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            border: 'none',
+                            background: skipPrefixOnce ? '#eff6ff' : '#f3f4f6',
+                            cursor: messagePrefix ? 'pointer' : 'not-allowed',
+                            opacity: messagePrefix ? 1 : 0.5,
+                            transition: 'background 0.2s',
+                            textAlign: 'left'
+                          }}
+                          onMouseEnter={(e) => { if (messagePrefix) e.currentTarget.style.background = skipPrefixOnce ? '#dbeafe' : '#e5e7eb'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = skipPrefixOnce ? '#eff6ff' : '#f3f4f6'; }}
+                        >
+                          <Undo2 size={20} style={{ color: skipPrefixOnce ? '#2563eb' : '#6b7280' }} />
+                          <span style={{ color: '#1f2937', fontSize: '14px' }}>
+                            单次取消前缀{skipPrefixOnce ? ' ✓' : ''}
+                          </span>
                         </button>
                         {currentSession && currentSession.type === 'group' && (
                           <button 
@@ -2154,6 +2173,7 @@ export default function Chat({ config }) {
                             onJumpToMessage={jumpToMessage}
                             onViewForwardMessage={handleViewForwardMessage}
                             onDownloadFile={handleDownloadFile}
+                            onViewImage={handleViewImage}
                           />
                         </div>
                       );
@@ -2205,6 +2225,11 @@ export default function Chat({ config }) {
             </div>
           )}
         </div>
+      )}
+
+      {/* 内置图片查看器 */}
+      {viewerImage && (
+        <ImageViewer key={viewerImage.src} image={viewerImage} onClose={() => setViewerImage(null)} />
       )}
 
       {/* Settings Panel */}

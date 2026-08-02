@@ -1,5 +1,23 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
+function replaceTempMessageId(prev, tempId, realId) {
+  const updated = {};
+  Object.keys(prev).forEach(sessionId => {
+    updated[sessionId] = prev[sessionId].map(m => (
+      String(m.message_id) === String(tempId) ? { ...m, message_id: realId } : m
+    ));
+  });
+  return updated;
+}
+
+function removeTempMessage(prev, tempId) {
+  const updated = {};
+  Object.keys(prev).forEach(sessionId => {
+    updated[sessionId] = prev[sessionId].filter(m => String(m.message_id) !== String(tempId));
+  });
+  return updated;
+}
+
 export function useOneBot(url, token) {
   const [status, setStatus] = useState('disconnected');
   
@@ -20,6 +38,7 @@ export function useOneBot(url, token) {
   const wsRef = useRef(null);
   const selfInfoRef = useRef(null);
   const pendingActionsRef = useRef({});
+  const customFaceLoadingRef = useRef(false);
   const getWsRef = () => wsRef; // Export wsRef for external use
 
   const getSessionId = (type, id) => `${type}:${id}`;
@@ -59,7 +78,7 @@ export function useOneBot(url, token) {
         } else if (segment.type === 'json') {
           try {
             const jsonData = typeof segment.data?.data === 'string' ? JSON.parse(segment.data.data) : segment.data?.data;
-            if (jsonData?.app === 'com.tencent.miniapp') {
+            if (typeof jsonData?.app === 'string' && jsonData.app.indexOf('miniapp') !== -1) {
               previews.push('[小程序]');
             } else if (jsonData?.prompt) {
               previews.push(jsonData.prompt);
@@ -123,7 +142,6 @@ export function useOneBot(url, token) {
       // For private chats: get_forward_msg_history (OneBot standard)
       const action = type === 'group' ? 'get_group_msg_history' : 'get_friend_msg_history';
       
-      console.log('=== Fetch History Request ===', { type, id, count, messageId, messageSeq, action });
       
       // Build params based on chat type
       let params = {};
@@ -140,12 +158,8 @@ export function useOneBot(url, token) {
       // - For private chats: uses message_id
       if (messageSeq && type === 'group') {
           params.message_seq = messageSeq.toString();
-          console.log('Using message_seq for pagination:', params.message_seq);
       } else if (messageId) {
           params.message_id = messageId.toString();
-          console.log('Using message_id for pagination:', params.message_id);
-      } else {
-          console.log('Fetching latest messages (no pagination)');
       }
 
       // Add count parameter - default to 100 for private chats, 20 for group chats
@@ -157,7 +171,6 @@ export function useOneBot(url, token) {
       params.parse_mult_msg = 'true';
       params.quick_reply = 'false';
 
-      console.log('Final params:', JSON.stringify(params, null, 2));
 
       wsRef.current.send(JSON.stringify({
         action: action,
@@ -266,10 +279,6 @@ export function useOneBot(url, token) {
       .filter((item) => item && (item.faceId !== null || item.faceCode || item.url));
   }, []);
 
-  const fetchCustomFace = useCallback(() => {
-    return fetchCustomFaceWithPager({ pagerType: 'append', count: customFacePager.count });
-  }, [customFacePager.count]);
-
   const mergeCustomFaces = useCallback((baseList, incomingList) => {
     const merged = [];
     const seen = new Set();
@@ -292,11 +301,13 @@ export function useOneBot(url, token) {
   const fetchCustomFaceWithPager = useCallback(({ pagerType = 'append', count = 48 } = {}) => {
     if (!(wsRef.current && wsRef.current.readyState === WebSocket.OPEN)) {
       console.warn('WebSocket not connected, cannot fetch custom face');
+      customFaceLoadingRef.current = false;
       setCustomFacePager(prev => ({ ...prev, loading: false, marker: 'error' }));
       return;
     }
     const safeCount = Number.isFinite(Number(count)) ? Math.max(1, Number(count)) : 48;
     const safePagerType = pagerType === 'full' ? 'full' : 'append';
+    customFaceLoadingRef.current = true;
     setCustomFacePager(prev => ({ ...prev, loading: true, marker: prev.marker === 'end' && safePagerType === 'append' ? 'end' : prev.marker, count: safeCount }));
     wsRef.current.send(JSON.stringify({
       action: 'fetch_custom_face',
@@ -305,18 +316,19 @@ export function useOneBot(url, token) {
     }));
   }, []);
 
+  const fetchCustomFace = useCallback(() => {
+    return fetchCustomFaceWithPager({ pagerType: 'append', count: customFacePager.count });
+  }, [customFacePager.count, fetchCustomFaceWithPager]);
+
   const reloadCustomFace = useCallback(() => {
     fetchCustomFaceWithPager({ pagerType: 'full', count: 48 });
   }, [fetchCustomFaceWithPager]);
 
   const loadMoreCustomFace = useCallback(() => {
-    setCustomFacePager(prev => {
-      if (prev.loading || prev.marker === 'end') return prev;
-      const nextCount = prev.count + 48;
-      fetchCustomFaceWithPager({ pagerType: 'append', count: nextCount });
-      return { ...prev, loading: true, count: nextCount };
-    });
-  }, [fetchCustomFaceWithPager]);
+    if (customFaceLoadingRef.current || customFacePager.marker === 'end') return;
+    const nextCount = customFacePager.count + 48;
+    fetchCustomFaceWithPager({ pagerType: 'append', count: nextCount });
+  }, [customFacePager.marker, customFacePager.count, fetchCustomFaceWithPager]);
 
   const sendActionWithEcho = useCallback((action, params = {}, echoPrefix = action) => {
     return new Promise((resolve, reject) => {
@@ -375,7 +387,7 @@ export function useOneBot(url, token) {
       // NapCat/Go-CQHTTP common API
       const result = await sendActionWithEcho('set_self_longnick', { longNick: text }, 'set_signature');
       return result;
-    } catch (err) {
+    } catch {
       // Fallback for implementations that map signature to personal_note
       return sendActionWithEcho('set_qq_profile', { personal_note: text }, 'set_signature_alt');
     }
@@ -431,6 +443,14 @@ export function useOneBot(url, token) {
     return sendActionWithEcho('get_forward_msg', { id }, 'get_forward_msg');
   }, [sendActionWithEcho]);
 
+  const fetchGroupWholeBan = useCallback(async (groupId) => {
+    const gid = Number(groupId);
+    if (!Number.isFinite(gid) || gid <= 0) {
+      throw new Error('Invalid group id');
+    }
+    return sendActionWithEcho('get_group_whole_ban', { group_id: gid }, 'get_group_whole_ban');
+  }, [sendActionWithEcho]);
+
   const addMessage = useCallback((msg) => {
     const isPrivate = msg.message_type === 'private';
     // For incoming messages:
@@ -457,11 +477,6 @@ export function useOneBot(url, token) {
         [sessionId]: [].concat(currentMessages, [msg])
       });
       
-      console.log('Message added to memory (not saved to localStorage):', {
-        sessionId,
-        type: msg.message?.[0]?.type,
-        messageCount: updated[sessionId].length
-      });
       
       return updated;
     });
@@ -569,15 +584,16 @@ export function useOneBot(url, token) {
                 setCustomFaces(prev => mergeCustomFaces(prev, list));
               }
               const isEnd = list.length === 0 || list.length < requestedCount;
+              customFaceLoadingRef.current = false;
               setCustomFacePager(prev => ({
                 ...prev,
                 loading: false,
                 marker: isEnd ? 'end' : 'ready',
                 count: requestedCount
               }));
-              console.log('Custom faces fetched:', list.length);
             } else {
               console.error('Failed to fetch custom faces:', data);
+              customFaceLoadingRef.current = false;
               setCustomFacePager(prev => ({ ...prev, loading: false, marker: 'error' }));
             }
           } else if (data.echo && data.echo.startsWith('delete_msg_')) {
@@ -677,14 +693,6 @@ export function useOneBot(url, token) {
             const type = parts[1];
             const id = parts[2];
             
-            console.log('========== HISTORY RESPONSE ==========');
-            console.log('Echo:', data.echo);
-            console.log('Type:', type);
-            console.log('ID:', id);
-            console.log('Status:', data.status);
-            console.log('Retcode:', data.retcode);
-            console.log('Data:', data.data);
-            
             // Check for unsupported API
             if (data.retcode === 1404 || (data.message && data.message.includes('不支持'))) {
               console.warn('API not supported for this chat type:', {
@@ -710,47 +718,26 @@ export function useOneBot(url, token) {
               });
             }
             
-            if (data.data && typeof data.data === 'object') {
-              console.log('Data keys:', Object.keys(data.data));
-              console.log('Data.messages exists:', data.data.messages ? 'yes' : 'no');
-              console.log('Data.messages length:', data.data.messages ? data.data.messages.length : 'N/A');
-              console.log('Data.data exists:', data.data.data ? 'yes' : 'no');
-              if (data.data.data && Array.isArray(data.data.data)) {
-                console.log('Data.data length:', data.data.data.length);
-              }
-            }
-            if (Array.isArray(data.data)) {
-              console.log('Data is array, length:', data.data.length);
-              if (data.data.length > 0) {
-                console.log('First message:', data.data[0]);
-              }
-            }
-
             if (data.status === 'ok' && data.data) {
               // Try to find the exact property the backend sent us (NapCat uses 'messages')
               let historyMessages = [];
               if (Array.isArray(data.data)) {
                 historyMessages = data.data;
-                console.log('Using data as array directly');
               } else if (data.data && Array.isArray(data.data.messages)) {
                 historyMessages = data.data.messages;
-                console.log('Using data.messages array');
               } else if (data.data && Array.isArray(data.data.data)) {
                 // Some APIs return data inside data.data
                 historyMessages = data.data.data;
-                console.log('Using data.data array');
               } else if (data.data && typeof data.data === 'object') {
                 // Fallback: look for any array inside data.data
                 const arrKey = Object.keys(data.data).find(key => Array.isArray(data.data[key]));
                 if (arrKey) {
                   historyMessages = data.data[arrKey];
-                  console.log('Using data[' + arrKey + '] array');
                 } else {
                   console.warn('No array found in data.data');
                 }
               }
               
-              console.log('History messages count:', historyMessages.length);
               
               if (historyMessages.length > 0) {
                 const sessionId = getSessionId(type, id);
@@ -793,103 +780,46 @@ export function useOneBot(url, token) {
             } else {
                console.warn('History response status is not ok:', data);
             }
-            console.log('=====================================\n');
+            } else if (data.echo && data.echo.startsWith('send_msg_')) {
+              // Response for normal text message send
+              const msgTempId = data.echo.slice('send_msg_'.length);
+              if (data.status === 'ok' && data.data && data.data.message_id) {
+                setMessages(prev => replaceTempMessageId(prev, msgTempId, data.data.message_id));
+              } else {
+                console.error('Message send failed:', data);
+                alert('消息发送失败：' + (data.message || '未知错误'));
+                setMessages(prev => removeTempMessage(prev, msgTempId));
+              }
+            } else if (data.echo && data.echo.startsWith('send_image_')) {
+              // Response for image send
+              const imgTempId = data.echo.slice('send_image_'.length);
+              if (data.status === 'ok' && data.data && data.data.message_id) {
+                setMessages(prev => replaceTempMessageId(prev, imgTempId, data.data.message_id));
+              } else {
+                console.error('Image send failed:', data);
+                alert('图片发送失败：' + (data.message || '未知错误'));
+                setMessages(prev => removeTempMessage(prev, imgTempId));
+              }
             } else if (data.echo && data.echo.startsWith('send_video_')) {
-              // Server response for video send
-              console.log('========== VIDEO SEND RESPONSE ==========');
-              console.log('Echo:', data.echo);
-              console.log('Status:', data.status);
-              console.log('Retcode:', data.retcode);
-              console.log('Data:', data.data);
-              
+              // Response for video send
+              const videoTempId = data.echo.slice('send_video_'.length);
               if (data.status === 'ok' && data.data && data.data.message_id) {
-                console.log('✅ Video sent successfully, message_id:', data.data.message_id);
-                
-                // Update the temporary message with real message_id
-                const tempId = 'temp_video_';
-                setMessages(prev => {
-                  const updated = {};
-                  Object.keys(prev).forEach(sessionId => {
-                    updated[sessionId] = prev[sessionId].map(m => {
-                      if (String(m.message_id).startsWith(tempId)) {
-                        console.log('Replacing temp message with real one:', {
-                          tempId: m.message_id,
-                          realId: data.data.message_id
-                        });
-                        return {
-                          ...m,
-                          message_id: data.data.message_id
-                        };
-                      }
-                      return m;
-                    });
-                  });
-                  return updated;
-                });
+                setMessages(prev => replaceTempMessageId(prev, videoTempId, data.data.message_id));
               } else {
-                console.error('❌ Video send failed:', data);
+                console.error('Video send failed:', data);
                 alert('视频发送失败：' + (data.message || '未知错误'));
-                
-                // Remove the temporary message
-                setMessages(prev => {
-                  const updated = {};
-                  Object.keys(prev).forEach(sessionId => {
-                    updated[sessionId] = prev[sessionId].filter(m => 
-                      !String(m.message_id).startsWith('temp_video_')
-                    );
-                  });
-                  return updated;
-                });
+                setMessages(prev => removeTempMessage(prev, videoTempId));
               }
-              console.log('=====================================\n');
             } else if (data.echo && data.echo.startsWith('send_file_')) {
-              // Server response for file send
-              console.log('========== FILE SEND RESPONSE ==========');
-              console.log('Echo:', data.echo);
-              console.log('Status:', data.status);
-              console.log('Retcode:', data.retcode);
-              console.log('Data:', data.data);
-              
+              // Response for file send
+              const fileTempId = data.echo.slice('send_file_'.length);
               if (data.status === 'ok' && data.data && data.data.message_id) {
-                console.log('✅ File sent successfully, message_id:', data.data.message_id);
-                
-                // Update the temporary message with real message_id
-                const tempId = 'temp_file_';
-                setMessages(prev => {
-                  const updated = {};
-                  Object.keys(prev).forEach(sessionId => {
-                    updated[sessionId] = prev[sessionId].map(m => {
-                      if (String(m.message_id).startsWith(tempId)) {
-                        console.log('Replacing temp message with real one:', {
-                          tempId: m.message_id,
-                          realId: data.data.message_id
-                        });
-                        return {
-                          ...m,
-                          message_id: data.data.message_id
-                        };
-                      }
-                      return m;
-                    });
-                  });
-                  return updated;
-                });
+                setMessages(prev => replaceTempMessageId(prev, fileTempId, data.data.message_id));
               } else {
-                console.error('❌ File send failed:', data);
+                console.error('File send failed:', data);
                 alert('文件发送失败：' + (data.message || '未知错误'));
-                
-                // Remove the temporary message
-                setMessages(prev => {
-                  const updated = {};
-                  Object.keys(prev).forEach(sessionId => {
-                    updated[sessionId] = prev[sessionId].filter(m => 
-                      !String(m.message_id).startsWith('temp_file_')
-                    );
-                  });
-                  return updated;
-                });
+                setMessages(prev => removeTempMessage(prev, fileTempId));
               }
-              console.log('=====================================\n');
           } else if (data.echo && data.echo.startsWith('group_info_')) {
             const groupId = data.echo.replace('group_info_', '');
             if (data.status === 'ok' && data.data) {
@@ -921,11 +851,12 @@ export function useOneBot(url, token) {
             if (data.status === 'ok' && data.data) {
               const sessionId = `group:${groupId}`;
               setGroupMembers(prev => {
-                const groupGroupMembers = prev[groupId] || {};
+                const list = Array.isArray(prev[groupId]) ? prev[groupId] : [];
+                const nextList = list.some(m => String(m.user_id) === String(userId))
+                  ? list.map(m => String(m.user_id) === String(userId) ? Object.assign({}, m, data.data) : m)
+                  : [].concat(list, [data.data]);
                 return Object.assign({}, prev, {
-                  [groupId]: Object.assign({}, groupGroupMembers, {
-                    [userId]: data.data
-                  })
+                  [groupId]: nextList
                 });
               });
               
@@ -996,6 +927,7 @@ export function useOneBot(url, token) {
 
   const sendMessage = useCallback((targetId, message, messageType = 'private') => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       const payload = {
         action: 'send_msg',
         params: {
@@ -1004,7 +936,7 @@ export function useOneBot(url, token) {
           group_id: messageType === 'group' ? parseInt(targetId) : undefined,
           message: message
         },
-        echo: Date.now().toString()
+        echo: `send_msg_${tempId}`
       };
       wsRef.current.send(JSON.stringify(payload));
       
@@ -1018,7 +950,7 @@ export function useOneBot(url, token) {
         time: Math.floor(Date.now() / 1000),
         sender: { nickname: 'Me' },
         direction: 'outgoing',
-        message_id: 'temp_' + Date.now() // temporary ID
+        message_id: tempId // temporary ID
       });
     } else {
       console.error('WebSocket is not connected');
@@ -1032,20 +964,11 @@ export function useOneBot(url, token) {
         return;
       }
       
-      console.log('Sending image:', { 
-        fileName: imageFile.name, 
-        fileSize: imageFile.size,
-        fileType: imageFile.type,
-        targetId,
-        messageType
-      });
-      
       // Convert image file to base64
       const reader = new FileReader();
       reader.onload = async (e) => {
         try {
           const base64Data = e.target.result.split(',')[1];
-          console.log('Image converted to base64, length:', base64Data.length);
           
           const imageMessage = [
             {
@@ -1056,6 +979,7 @@ export function useOneBot(url, token) {
             }
           ];
           
+          const tempId = `temp_img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
           const payload = {
             action: 'send_msg',
             params: {
@@ -1064,10 +988,9 @@ export function useOneBot(url, token) {
               group_id: messageType === 'group' ? parseInt(targetId) : undefined,
               message: imageMessage
             },
-            echo: `send_image_${Date.now()}`
+            echo: `send_image_${tempId}`
           };
           
-          console.log('Sending image payload:', JSON.stringify(payload, null, 2));
           wsRef.current.send(JSON.stringify(payload));
           
           // Optimistically add to messages
@@ -1080,10 +1003,9 @@ export function useOneBot(url, token) {
             time: Math.floor(Date.now() / 1000),
             sender: { nickname: 'Me' },
             direction: 'outgoing',
-            message_id: 'temp_img_' + Date.now()
+            message_id: tempId
           });
           
-          console.log('Image sent successfully');
           resolve();
         } catch (error) {
           console.error('Error sending image:', error);
@@ -1105,21 +1027,11 @@ export function useOneBot(url, token) {
         return;
       }
       
-      console.log('========== SENDING VIDEO ==========');
-      console.log('Sending video:', { 
-        fileName: videoFile.name, 
-        fileSize: (videoFile.size / (1024 * 1024)).toFixed(2) + ' MB',
-        fileType: videoFile.type,
-        targetId,
-        messageType
-      });
-      
       // Convert video file to base64
       const reader = new FileReader();
       reader.onload = async (e) => {
         try {
           const base64Data = e.target.result.split(',')[1];
-          console.log('Video converted to base64, length:', (base64Data.length / 1024).toFixed(2) + ' KB');
           
           // 警告：大视频可能无法被服务器处理
           if (base64Data.length > 10 * 1024 * 1024) { // > 10MB base64
@@ -1136,6 +1048,7 @@ export function useOneBot(url, token) {
             }
           ];
           
+          const tempId = `temp_video_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
           const payload = {
             action: 'send_msg',
             params: {
@@ -1144,11 +1057,8 @@ export function useOneBot(url, token) {
               group_id: messageType === 'group' ? parseInt(targetId) : undefined,
               message: videoMessage
             },
-            echo: `send_video_${Date.now()}`
+            echo: `send_video_${tempId}`
           };
-          
-          console.log('Sending video payload:', JSON.stringify(payload, null, 2));
-          console.log('=====================================\n');
           
           wsRef.current.send(JSON.stringify(payload));
           
@@ -1162,11 +1072,10 @@ export function useOneBot(url, token) {
             time: Math.floor(Date.now() / 1000),
             sender: { nickname: 'Me' },
             direction: 'outgoing',
-            message_id: 'temp_video_' + Date.now()
+            message_id: tempId
           };
           
           addMessage(tempMessage);
-          console.log('Video message added (temporary, waiting for server response)');
           resolve();
         } catch (error) {
           console.error('Error sending video:', error);
@@ -1190,21 +1099,12 @@ export function useOneBot(url, token) {
         return;
       }
       
-      console.log('Sending file:', { 
-        fileName: file.name, 
-        fileSize: file.size,
-        fileType: file.type,
-        targetId,
-        messageType
-      });
-      
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         // Convert file to base64
         const reader = new FileReader();
         reader.onload = async (e) => {
           try {
             const base64Data = e.target.result.split(',')[1];
-            console.log('File converted to base64, length:', base64Data.length);
             
             const fileMessage = [
               {
@@ -1217,6 +1117,7 @@ export function useOneBot(url, token) {
               }
             ];
             
+            const tempId = `temp_file_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
             const payload = {
               action: 'send_msg',
               params: {
@@ -1225,10 +1126,9 @@ export function useOneBot(url, token) {
                 group_id: messageType === 'group' ? parseInt(targetId) : undefined,
                 message: fileMessage
               },
-              echo: `send_file_${Date.now()}`
+              echo: `send_file_${tempId}`
             };
             
-            console.log('Sending file payload');
             wsRef.current.send(JSON.stringify(payload));
             
             // Optimistically add to messages
@@ -1241,10 +1141,9 @@ export function useOneBot(url, token) {
               time: Math.floor(Date.now() / 1000),
               sender: { nickname: 'Me' },
               direction: 'outgoing',
-              message_id: 'temp_file_' + Date.now()
+              message_id: tempId
             });
             
-            console.log('File sent successfully');
             resolve();
           } catch (error) {
             console.error('Error sending file:', error);
@@ -1278,5 +1177,5 @@ export function useOneBot(url, token) {
     return sendActionWithEcho('get_private_file_url', { file_id: fileId }, 'get_private_file_url');
   }, [sendActionWithEcho]);
 
-  return { status, messages, setMessages, sessions, sendMessage, sendImage, sendVideo, sendFile, fetchHistory, fetchGroupInfo, fetchGroupMemberList, fetchCustomFace, fetchCustomFaceWithPager, reloadCustomFace, loadMoreCustomFace, customFacePager, getWsRef, friends, groups, groupMembers, customFaces, selfInfo, updateNickname, updateSignature, updateGroupName, setGroupWholeBan, leaveGroup, getForwardMessage, getFile, getGroupFileUrl, getPrivateFileUrl };
+  return { status, messages, setMessages, sessions, sendMessage, sendImage, sendVideo, sendFile, fetchHistory, fetchGroupInfo, fetchGroupMemberList, fetchCustomFace, fetchCustomFaceWithPager, reloadCustomFace, loadMoreCustomFace, customFacePager, getWsRef, friends, groups, groupMembers, customFaces, selfInfo, updateNickname, updateSignature, updateGroupName, setGroupWholeBan, leaveGroup, getForwardMessage, getFile, getGroupFileUrl, getPrivateFileUrl, fetchGroupWholeBan };
 }

@@ -175,7 +175,7 @@ wss.on('connection', (ws) => {
           },
           echo
         }));
-      } else if (data.action === 'get_msg_history' || data.action === 'get_group_msg_history' || data.action === 'get_c2c_msg_history') {
+      } else if (data.action === 'get_msg_history' || data.action === 'get_group_msg_history' || data.action === 'get_c2c_msg_history' || data.action === 'get_friend_msg_history') {
         const { params, echo } = data;
         const count = params.count || 10;
         const history = [];
